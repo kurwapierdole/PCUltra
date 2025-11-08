@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PCUltra - Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">PCUltra</div>
+        <div class="nav-menu">
+            <a href="#dashboard" class="nav-link active" data-page="dashboard">Панель управления</a>
+            <a href="#config" class="nav-link" data-page="config">Конфигурация</a>
+            <a href="#shortcuts" class="nav-link" data-page="shortcuts">Команды</a>
+            <a href="#users" class="nav-link" data-page="users">Пользователи</a>
+            <a href="{{ url_for('logout') }}" class="nav-link">Выход</a>
+        </div>
+    </nav>
+
+    <main class="main-content">
+        <!-- Dashboard Page -->
+        <div id="dashboard-page" class="page active">
+            <h1>Панель управления</h1>
+            
+            <div class="status-cards">
+                <div class="card">
+                    <h3>Статус бота</h3>
+                    <div class="status-indicator" id="bot-status">
+                        <span class="status-dot"></span>
+                        <span id="bot-status-text">Загрузка...</span>
+                    </div>
+                    <div class="bot-controls">
+                        <button id="btn-start-bot" class="btn btn-success">Запустить</button>
+                        <button id="btn-stop-bot" class="btn btn-danger">Остановить</button>
+                        <button id="btn-restart-bot" class="btn btn-warning">Перезапустить</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3>Использование ресурсов</h3>
+                    <div class="resource-info">
+                        <div class="resource-item">
+                            <label>CPU:</label>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="cpu-progress" style="width: 0%"></div>
+                            </div>
+                            <span id="cpu-text">0%</span>
+                        </div>
+                        <div class="resource-item">
+                            <label>Память:</label>
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="memory-progress" style="width: 0%"></div>
+                            </div>
+                            <span id="memory-text">0%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Config Page -->
+        <div id="config-page" class="page">
+            <h1>Конфигурация бота</h1>
+            
+            <div class="card">
+                <h3>Настройки Telegram Bot</h3>
+                <form id="config-form">
+                    <div class="form-group">
+                        <label for="bot-token">Telegram Bot Token:</label>
+                        <input type="text" id="bot-token" name="bot_token" placeholder="Введите токен бота">
+                        <small>Получите токен у @BotFather в Telegram</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="command-timeout">Таймаут команды (секунды):</label>
+                        <input type="number" id="command-timeout" name="command_timeout" value="30" min="1" max="300">
+                    </div>
+                    <div class="form-group">
+                        <label>
+                            <input type="checkbox" id="auto-start" name="auto_start">
+                            Автозапуск бота при старте приложения
+                        </label>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3>Настройки Web UI</h3>
+                <form id="web-config-form">
+                    <div class="form-group">
+                        <label for="admin-username">Имя пользователя:</label>
+                        <input type="text" id="admin-username" name="admin_username">
+                    </div>
+                    <div class="form-group">
+                        <label for="admin-password">Новый пароль:</label>
+                        <input type="password" id="admin-password" name="admin_password" placeholder="Оставьте пустым, чтобы не менять">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Shortcuts Page -->
+        <div id="shortcuts-page" class="page">
+            <h1>Управление командами</h1>
+            
+            <div class="card">
+                <h3>Добавить команду</h3>
+                <form id="shortcut-form">
+                    <div class="form-group">
+                        <label for="shortcut-command">Команда (например, /open_spotify):</label>
+                        <input type="text" id="shortcut-command" name="command" placeholder="/command_name" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="shortcut-action">Действие:</label>
+                        <select id="shortcut-action" name="action" required>
+                            <option value="launch_app">Запуск приложения</option>
+                            <option value="execute_script">Выполнить скрипт</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="shortcut-path">Путь к приложению/скрипту:</label>
+                        <input type="text" id="shortcut-path" name="path" placeholder="C:\Path\To\App.exe" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="shortcut-args">Аргументы (через запятую):</label>
+                        <input type="text" id="shortcut-args" name="args" placeholder="arg1, arg2">
+                    </div>
+                    <button type="submit" class="btn btn-primary">Добавить команду</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3>Существующие команды</h3>
+                <div id="shortcuts-list"></div>
+            </div>
+        </div>
+
+        <!-- Users Page -->
+        <div id="users-page" class="page">
+            <h1>Управление пользователями</h1>
+            
+            <div class="card">
+                <h3>Добавить пользователя</h3>
+                <form id="user-form">
+                    <div class="form-group">
+                        <label for="user-id">Telegram User ID:</label>
+                        <input type="number" id="user-id" name="user_id" placeholder="123456789" required>
+                        <small>Получите свой ID у @userinfobot в Telegram</small>
+                    </div>
+                    <button type="submit" class="btn btn-primary">Добавить пользователя</button>
+                </form>
+            </div>
+
+            <div class="card">
+                <h3>Авторизованные пользователи</h3>
+                <div id="users-list"></div>
+            </div>
+        </div>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+</body>
+</html>

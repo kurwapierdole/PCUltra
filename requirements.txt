@@ -1,0 +1,36 @@
+# Core dependencies
+python-telegram-bot==20.7
+flask==3.0.0
+flask-cors==4.0.0
+flask-login==0.6.3
+werkzeug==3.0.1
+bcrypt==4.1.2
+pyyaml==6.0.1
+
+# System control
+pyautogui==0.9.54
+pygetwindow==0.0.9
+pynput==1.7.6
+psutil==5.9.6
+
+# Browser automation
+playwright==1.40.0
+
+# System tray
+pystray==0.19.5
+
+# Screenshots
+mss==9.0.1
+
+# Windows specific
+pywin32==306
+win10toast==0.9
+
+# HTTP client
+requests==2.31.0
+
+# Configuration
+python-dotenv==1.0.0
+
+# Building
+pyinstaller==6.2.0
