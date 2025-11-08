@@ -285,7 +285,11 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
     def api_get_shortcuts():
         """Get shortcuts"""
         config = config_manager.get_config()
-        return jsonify(config.get('shortcuts', {}))
+        shortcuts = config.get('shortcuts', {})
+        # Ensure shortcuts is a dict
+        if shortcuts is None:
+            shortcuts = {}
+        return jsonify(shortcuts)
     
     @app.route('/api/shortcuts', methods=['POST'])
     @login_required
@@ -297,19 +301,35 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
             config = config_manager.get_config()
             shortcuts = config.get('shortcuts', {})
             
-            shortcut_id = data.get('id') or f"shortcut_{len(shortcuts)}"
+            # Ensure shortcuts is a dict
+            if shortcuts is None:
+                shortcuts = {}
+            
+            # Generate unique shortcut ID from command
+            command = data.get('command', '').strip()
+            if not command:
+                return jsonify({'success': False, 'error': 'Command is required'}), 400
+            
+            # Remove leading slash if present
+            shortcut_id = command.lstrip('/')
+            
+            # Parse args from string to list
+            args = data.get('args', '')
+            if isinstance(args, str):
+                args = [arg.strip() for arg in args.split(',') if arg.strip()]
+            
             shortcuts[shortcut_id] = {
-                'command': data.get('command'),
+                'command': command,
                 'action': data.get('action'),
                 'path': data.get('path'),
-                'args': data.get('args', [])
+                'args': args
             }
             
-            config['shortcuts'] = shortcuts
             config_manager.update_config({'shortcuts': shortcuts})
             
             return jsonify({'success': True, 'id': shortcut_id})
         except Exception as e:
+            logger.error(f"Add shortcut error: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/shortcuts/<shortcut_id>', methods=['DELETE'])
@@ -320,13 +340,23 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
             config = config_manager.get_config()
             shortcuts = config.get('shortcuts', {})
             
+            # Ensure shortcuts is a dict
+            if shortcuts is None:
+                shortcuts = {}
+            
+            logger.info(f"Attempting to delete shortcut: {shortcut_id}")
+            logger.info(f"Available shortcuts: {list(shortcuts.keys())}")
+            
             if shortcut_id in shortcuts:
                 del shortcuts[shortcut_id]
                 config_manager.update_config({'shortcuts': shortcuts})
+                logger.info(f"Successfully deleted shortcut: {shortcut_id}")
                 return jsonify({'success': True})
             else:
+                logger.warning(f"Shortcut not found: {shortcut_id}")
                 return jsonify({'success': False, 'error': 'Shortcut not found'}), 404
         except Exception as e:
+            logger.error(f"Delete shortcut error: {e}")
             return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/users')
