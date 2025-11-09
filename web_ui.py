@@ -301,13 +301,6 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
         data = request.get_json()
         
         try:
-            config = config_manager.get_config()
-            shortcuts = config.get('shortcuts', {})
-            
-            # Ensure shortcuts is a dict
-            if shortcuts is None:
-                shortcuts = {}
-            
             # Generate unique shortcut ID from command
             command = data.get('command', '').strip()
             if not command:
@@ -321,14 +314,34 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
             if isinstance(args, str):
                 args = [arg.strip() for arg in args.split(',') if arg.strip()]
             
-            shortcuts[shortcut_id] = {
-                'command': command,
-                'action': data.get('action'),
-                'path': data.get('path'),
-                'args': args
-            }
-            
-            config_manager.update_config({'shortcuts': shortcuts})
+            # Read current config
+            with config_manager.lock:
+                with open(config_manager.config_path, 'r', encoding='utf-8') as f:
+                    file_config = yaml.safe_load(f)
+                
+                shortcuts = file_config.get('shortcuts', {})
+                if shortcuts is None:
+                    shortcuts = {}
+                
+                # Add new shortcut
+                shortcuts[shortcut_id] = {
+                    'command': command,
+                    'display_name': data.get('display_name', command),
+                    'action': data.get('action'),
+                    'path': data.get('path'),
+                    'args': args
+                }
+                
+                # Update config
+                file_config['shortcuts'] = shortcuts
+                
+                # Write back to file
+                with open(config_manager.config_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(file_config, f, default_flow_style=False, allow_unicode=True)
+                
+                # Force reload in memory
+                config_manager.config = None
+                config_manager.load_config()
             
             return jsonify({'success': True, 'id': shortcut_id})
         except Exception as e:

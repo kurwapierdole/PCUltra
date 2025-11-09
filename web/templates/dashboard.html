@@ -5,6 +5,60 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>PCUltra - Dashboard</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
+    <style>
+        /* Toggle Switch */
+        .switch-label {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+        }
+        
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 50px;
+            height: 24px;
+        }
+        
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 24px;
+        }
+        
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px;
+            width: 18px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        
+        input:checked + .slider {
+            background-color: #667eea;
+        }
+        
+        input:checked + .slider:before {
+            transform: translateX(26px);
+        }
+    </style>
 </head>
 <body>
     <nav class="navbar">
@@ -76,9 +130,12 @@
                         <input type="number" id="command-timeout" name="command_timeout" value="30" min="1" max="300">
                     </div>
                     <div class="form-group">
-                        <label>
-                            <input type="checkbox" id="auto-start" name="auto_start">
-                            Автозапуск бота при старте приложения
+                        <label class="switch-label">
+                            <span>Автозапуск бота при старте приложения</span>
+                            <label class="switch">
+                                <input type="checkbox" id="auto-start" name="auto_start">
+                                <span class="slider"></span>
+                            </label>
                         </label>
                     </div>
                     <button type="submit" class="btn btn-primary">Сохранить</button>
@@ -113,18 +170,25 @@
                         <input type="text" id="shortcut-command" name="command" placeholder="/command_name" required>
                     </div>
                     <div class="form-group">
+                        <label for="shortcut-display-name">Отображаемое имя (для бота):</label>
+                        <input type="text" id="shortcut-display-name" name="display_name" placeholder="Spotify">
+                        <small>Это имя будет отображаться в боте вместо команды</small>
+                    </div>
+                    <div class="form-group">
                         <label for="shortcut-action">Действие:</label>
                         <select id="shortcut-action" name="action" required>
                             <option value="launch_app">Запуск приложения</option>
+                            <option value="open_url">Открыть ссылку</option>
                             <option value="execute_script">Выполнить скрипт</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="shortcut-path">Путь к приложению/скрипту:</label>
-                        <input type="text" id="shortcut-path" name="path" placeholder="C:\Path\To\App.exe" required>
+                        <label for="shortcut-path">Путь к приложению/URL:</label>
+                        <input type="text" id="shortcut-path" name="path" placeholder="C:\Path\To\App.exe или https://example.com" required>
+                        <small>Для ссылок укажите полный URL с http:// или https://</small>
                     </div>
                     <div class="form-group">
-                        <label for="shortcut-args">Аргументы (через запятую):</label>
+                        <label for="shortcut-args">Аргументы (через запятую, только для приложений):</label>
                         <input type="text" id="shortcut-args" name="args" placeholder="arg1, arg2">
                     </div>
                     <button type="submit" class="btn btn-primary">Добавить команду</button>

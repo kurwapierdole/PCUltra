@@ -233,6 +233,7 @@ document.getElementById('shortcut-form').addEventListener('submit', async (e) =>
     
     const formData = {
         command: document.getElementById('shortcut-command').value,
+        display_name: document.getElementById('shortcut-display-name').value || document.getElementById('shortcut-command').value,
         action: document.getElementById('shortcut-action').value,
         path: document.getElementById('shortcut-path').value,
         args: document.getElementById('shortcut-args').value.split(',').map(s => s.trim()).filter(s => s)
