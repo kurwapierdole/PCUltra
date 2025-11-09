@@ -71,21 +71,41 @@ class ConfigManager:
     def load_config(self):
         """Load configuration from file"""
         with self.lock:
-            with open(self.config_path, 'r', encoding='utf-8') as f:
-                self.config = yaml.safe_load(f)
+            try:
+                with open(self.config_path, 'r', encoding='utf-8') as f:
+                    self.config = yaml.safe_load(f)
+                    if self.config is None:
+                        self.config = {}
+            except FileNotFoundError:
+                logger.warning(f"Config file not found, creating default")
+                self.create_default_config()
+                self.load_config()
+            except Exception as e:
+                logger.error(f"Error loading config: {e}")
+                self.config = {}
         return self.config
     
     def save_config(self):
         """Save configuration to file"""
         with self.lock:
-            import logging
-            logger = logging.getLogger(__name__)
-            logger.info(f"Saving config. Shortcuts to save: {list(self.config.get('shortcuts', {}).keys())}")
-            
-            with open(self.config_path, 'w', encoding='utf-8') as f:
-                yaml.dump(self.config, f, default_flow_style=False, allow_unicode=True)
-            
-            logger.info(f"Config saved to {self.config_path}")
+            try:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.info(f"Saving config. Shortcuts to save: {list(self.config.get('shortcuts', {}).keys())}")
+                
+                # Create backup before saving
+                if self.config_path.exists():
+                    backup_path = self.config_path.with_suffix('.yaml.bak')
+                    import shutil
+                    shutil.copy2(self.config_path, backup_path)
+                
+                with open(self.config_path, 'w', encoding='utf-8') as f:
+                    yaml.dump(self.config, f, default_flow_style=False, allow_unicode=True)
+                
+                logger.info(f"Config saved to {self.config_path}")
+            except Exception as e:
+                logger.error(f"Error saving config: {e}")
+                raise
     
     def get_config(self):
         """Get current configuration"""

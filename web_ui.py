@@ -301,10 +301,18 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
         data = request.get_json()
         
         try:
-            # Generate unique shortcut ID from command
+            # Validate input
             command = data.get('command', '').strip()
             if not command:
                 return jsonify({'success': False, 'error': 'Command is required'}), 400
+            
+            action = data.get('action', '').strip()
+            if action not in ['launch_app', 'open_url', 'execute_script']:
+                return jsonify({'success': False, 'error': 'Invalid action'}), 400
+            
+            path = data.get('path', '').strip()
+            if not path:
+                return jsonify({'success': False, 'error': 'Path is required'}), 400
             
             # Remove leading slash if present
             shortcut_id = command.lstrip('/')
@@ -314,38 +322,53 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
             if isinstance(args, str):
                 args = [arg.strip() for arg in args.split(',') if arg.strip()]
             
-            # Read current config
-            with config_manager.lock:
-                with open(config_manager.config_path, 'r', encoding='utf-8') as f:
-                    file_config = yaml.safe_load(f)
-                
-                shortcuts = file_config.get('shortcuts', {})
-                if shortcuts is None:
-                    shortcuts = {}
-                
-                # Add new shortcut
-                shortcuts[shortcut_id] = {
-                    'command': command,
-                    'display_name': data.get('display_name', command),
-                    'action': data.get('action'),
-                    'path': data.get('path'),
-                    'args': args
-                }
-                
-                # Update config
-                file_config['shortcuts'] = shortcuts
-                
-                # Write back to file
-                with open(config_manager.config_path, 'w', encoding='utf-8') as f:
-                    yaml.dump(file_config, f, default_flow_style=False, allow_unicode=True)
-                
-                # Force reload in memory
-                config_manager.config = None
-                config_manager.load_config()
+            # Read current config with retry logic
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    with config_manager.lock:
+                        with open(config_manager.config_path, 'r', encoding='utf-8') as f:
+                            file_config = yaml.safe_load(f)
+                        
+                        if file_config is None:
+                            file_config = {}
+                        
+                        shortcuts = file_config.get('shortcuts', {})
+                        if shortcuts is None:
+                            shortcuts = {}
+                        
+                        # Add new shortcut
+                        shortcuts[shortcut_id] = {
+                            'command': command,
+                            'display_name': data.get('display_name', command),
+                            'action': action,
+                            'path': path,
+                            'args': args
+                        }
+                        
+                        # Update config
+                        file_config['shortcuts'] = shortcuts
+                        
+                        # Write back to file
+                        with open(config_manager.config_path, 'w', encoding='utf-8') as f:
+                            yaml.dump(file_config, f, default_flow_style=False, allow_unicode=True)
+                        
+                        # Force reload in memory
+                        config_manager.config = None
+                        config_manager.load_config()
+                    
+                    logger.info(f"Successfully added shortcut: {shortcut_id}")
+                    return jsonify({'success': True, 'id': shortcut_id})
+                    
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Retry {attempt + 1}/{max_retries} for add shortcut: {e}")
+                        time.sleep(0.5)
+                    else:
+                        raise
             
-            return jsonify({'success': True, 'id': shortcut_id})
         except Exception as e:
-            logger.error(f"Add shortcut error: {e}")
+            logger.error(f"Add shortcut error: {e}", exc_info=True)
             return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/shortcuts/<shortcut_id>', methods=['DELETE'])
@@ -355,46 +378,59 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
         try:
             logger.info(f"DELETE request for shortcut: {shortcut_id}")
             
-            # Direct file manipulation (most reliable)
-            with config_manager.lock:
-                # Read current config from file
-                with open(config_manager.config_path, 'r', encoding='utf-8') as f:
-                    file_config = yaml.safe_load(f)
-                
-                shortcuts = file_config.get('shortcuts', {})
-                if shortcuts is None:
-                    shortcuts = {}
-                
-                logger.info(f"Shortcuts before deletion: {list(shortcuts.keys())}")
-                
-                if shortcut_id in shortcuts:
-                    # Delete from dict
-                    del shortcuts[shortcut_id]
-                    logger.info(f"Shortcuts after deletion: {list(shortcuts.keys())}")
+            # Direct file manipulation with retry logic
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    with config_manager.lock:
+                        # Read current config from file
+                        with open(config_manager.config_path, 'r', encoding='utf-8') as f:
+                            file_config = yaml.safe_load(f)
+                        
+                        if file_config is None:
+                            file_config = {}
+                        
+                        shortcuts = file_config.get('shortcuts', {})
+                        if shortcuts is None:
+                            shortcuts = {}
+                        
+                        logger.info(f"Shortcuts before deletion: {list(shortcuts.keys())}")
+                        
+                        if shortcut_id in shortcuts:
+                            # Delete from dict
+                            del shortcuts[shortcut_id]
+                            logger.info(f"Shortcuts after deletion: {list(shortcuts.keys())}")
+                            
+                            # Update file config
+                            file_config['shortcuts'] = shortcuts
+                            
+                            # Write back to file
+                            with open(config_manager.config_path, 'w', encoding='utf-8') as f:
+                                yaml.dump(file_config, f, default_flow_style=False, allow_unicode=True)
+                            
+                            # Force reload in memory
+                            config_manager.config = None
+                            config_manager.load_config()
+                            
+                            logger.info(f"Successfully deleted shortcut: {shortcut_id}")
+                            
+                            # Verify deletion
+                            verify_config = config_manager.get_config()
+                            verify_shortcuts = verify_config.get('shortcuts', {})
+                            logger.info(f"Verification - shortcuts in memory: {list(verify_shortcuts.keys() if verify_shortcuts else [])}")
+                            
+                            return jsonify({'success': True, 'reload': True})
+                        else:
+                            logger.warning(f"Shortcut not found: {shortcut_id}")
+                            return jsonify({'success': False, 'error': f'Shortcut "{shortcut_id}" not found'}), 404
                     
-                    # Update file config
-                    file_config['shortcuts'] = shortcuts
-                    
-                    # Write back to file
-                    with open(config_manager.config_path, 'w', encoding='utf-8') as f:
-                        yaml.dump(file_config, f, default_flow_style=False, allow_unicode=True)
-                    
-                    # Force reload in memory
-                    config_manager.config = None
-                    config_manager.load_config()
-                    
-                    logger.info(f"Successfully deleted shortcut: {shortcut_id}")
-                    
-                    # Verify deletion
-                    verify_config = config_manager.get_config()
-                    verify_shortcuts = verify_config.get('shortcuts', {})
-                    logger.info(f"Verification - shortcuts in memory: {list(verify_shortcuts.keys() if verify_shortcuts else [])}")
-                    
-                    return jsonify({'success': True, 'reload': True})
-                else:
-                    logger.warning(f"Shortcut not found: {shortcut_id}")
-                    return jsonify({'success': False, 'error': f'Shortcut "{shortcut_id}" not found'}), 404
-                    
+                except Exception as e:
+                    if attempt < max_retries - 1:
+                        logger.warning(f"Retry {attempt + 1}/{max_retries} for delete shortcut: {e}")
+                        time.sleep(0.5)
+                    else:
+                        raise
+                        
         except Exception as e:
             logger.error(f"Delete shortcut error: {e}", exc_info=True)
             return jsonify({'success': False, 'error': str(e)}), 500

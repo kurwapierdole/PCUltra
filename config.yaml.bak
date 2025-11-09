@@ -1,7 +1,7 @@
 bot:
   authorized_users:
   - 6557640463
-  auto_start: true
+  auto_start: false
   command_timeout: 30
   token: 7789747238:AAFrad7uAYucP-2Vi1VmxOlMcKelLcaXS5M
 permissions: {}
