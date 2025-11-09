@@ -78,8 +78,14 @@ class ConfigManager:
     def save_config(self):
         """Save configuration to file"""
         with self.lock:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"Saving config. Shortcuts to save: {list(self.config.get('shortcuts', {}).keys())}")
+            
             with open(self.config_path, 'w', encoding='utf-8') as f:
                 yaml.dump(self.config, f, default_flow_style=False, allow_unicode=True)
+            
+            logger.info(f"Config saved to {self.config_path}")
     
     def get_config(self):
         """Get current configuration"""
@@ -89,17 +95,30 @@ class ConfigManager:
     
     def update_config(self, updates):
         """Update configuration with provided values"""
+        # Always reload from file first to get latest state
         self.load_config()
         
         def deep_update(base_dict, update_dict):
             for key, value in update_dict.items():
-                if isinstance(value, dict) and key in base_dict:
+                # Special handling for shortcuts - replace entirely, don't merge
+                if key == 'shortcuts':
+                    base_dict[key] = value
+                elif isinstance(value, dict) and key in base_dict and isinstance(base_dict[key], dict):
+                    # For other dicts, do deep merge
                     deep_update(base_dict[key], value)
                 else:
                     base_dict[key] = value
         
         deep_update(self.config, updates)
         self.save_config()
+        
+        # Reload after save to ensure consistency
+        self.load_config()
+        
+        # Log for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"Config updated. Current shortcuts: {list(self.config.get('shortcuts', {}).keys())}")
     
     def is_user_authorized(self, user_id):
         """Check if user is authorized"""
@@ -138,6 +157,9 @@ class ConfigManager:
     
     def get_shortcut(self, command):
         """Get shortcut configuration by command"""
+        # Always reload to get fresh data from file
+        self.config = None
+        self.load_config()
         config = self.get_config()
         shortcuts = config.get('shortcuts', {})
         

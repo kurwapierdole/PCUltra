@@ -7,6 +7,7 @@ Web UI for PCUltra
 import os
 import json
 import logging
+import yaml
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from flask_login import LoginManager, login_user, logout_user, login_required, UserMixin
 from flask_cors import CORS
@@ -284,6 +285,8 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
     @login_required
     def api_get_shortcuts():
         """Get shortcuts"""
+        # Reload config to get fresh data
+        config_manager.load_config()
         config = config_manager.get_config()
         shortcuts = config.get('shortcuts', {})
         # Ensure shortcuts is a dict
@@ -337,26 +340,50 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
     def api_delete_shortcut(shortcut_id):
         """Delete shortcut"""
         try:
-            config = config_manager.get_config()
-            shortcuts = config.get('shortcuts', {})
+            logger.info(f"DELETE request for shortcut: {shortcut_id}")
             
-            # Ensure shortcuts is a dict
-            if shortcuts is None:
-                shortcuts = {}
-            
-            logger.info(f"Attempting to delete shortcut: {shortcut_id}")
-            logger.info(f"Available shortcuts: {list(shortcuts.keys())}")
-            
-            if shortcut_id in shortcuts:
-                del shortcuts[shortcut_id]
-                config_manager.update_config({'shortcuts': shortcuts})
-                logger.info(f"Successfully deleted shortcut: {shortcut_id}")
-                return jsonify({'success': True})
-            else:
-                logger.warning(f"Shortcut not found: {shortcut_id}")
-                return jsonify({'success': False, 'error': 'Shortcut not found'}), 404
+            # Direct file manipulation (most reliable)
+            with config_manager.lock:
+                # Read current config from file
+                with open(config_manager.config_path, 'r', encoding='utf-8') as f:
+                    file_config = yaml.safe_load(f)
+                
+                shortcuts = file_config.get('shortcuts', {})
+                if shortcuts is None:
+                    shortcuts = {}
+                
+                logger.info(f"Shortcuts before deletion: {list(shortcuts.keys())}")
+                
+                if shortcut_id in shortcuts:
+                    # Delete from dict
+                    del shortcuts[shortcut_id]
+                    logger.info(f"Shortcuts after deletion: {list(shortcuts.keys())}")
+                    
+                    # Update file config
+                    file_config['shortcuts'] = shortcuts
+                    
+                    # Write back to file
+                    with open(config_manager.config_path, 'w', encoding='utf-8') as f:
+                        yaml.dump(file_config, f, default_flow_style=False, allow_unicode=True)
+                    
+                    # Force reload in memory
+                    config_manager.config = None
+                    config_manager.load_config()
+                    
+                    logger.info(f"Successfully deleted shortcut: {shortcut_id}")
+                    
+                    # Verify deletion
+                    verify_config = config_manager.get_config()
+                    verify_shortcuts = verify_config.get('shortcuts', {})
+                    logger.info(f"Verification - shortcuts in memory: {list(verify_shortcuts.keys() if verify_shortcuts else [])}")
+                    
+                    return jsonify({'success': True, 'reload': True})
+                else:
+                    logger.warning(f"Shortcut not found: {shortcut_id}")
+                    return jsonify({'success': False, 'error': f'Shortcut "{shortcut_id}" not found'}), 404
+                    
         except Exception as e:
-            logger.error(f"Delete shortcut error: {e}")
+            logger.error(f"Delete shortcut error: {e}", exc_info=True)
             return jsonify({'success': False, 'error': str(e)}), 500
     
     @app.route('/api/users')

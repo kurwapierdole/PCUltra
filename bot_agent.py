@@ -278,6 +278,10 @@ class BotAgent:
     def _get_shortcuts_menu(self):
         """Create shortcuts menu"""
         keyboard = []
+        
+        # Force reload config to get fresh shortcuts
+        self.config_manager.config = None
+        self.config_manager.load_config()
         config = self.config_manager.get_config()
         shortcuts = config.get('shortcuts', {})
         

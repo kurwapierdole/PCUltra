@@ -16,6 +16,11 @@ function showPage(pageName) {
         page.classList.remove('active');
     });
     document.getElementById(`${pageName}-page`).classList.add('active');
+    
+    // Reload data when switching to shortcuts page
+    if (pageName === 'shortcuts') {
+        loadShortcuts();
+    }
 }
 
 // Status update
@@ -188,13 +193,22 @@ document.getElementById('web-config-form').addEventListener('submit', async (e) 
 // Load shortcuts
 async function loadShortcuts() {
     try {
+        console.log('Loading shortcuts...');
         const response = await fetch('/api/shortcuts');
         const shortcuts = await response.json();
+        console.log('Shortcuts loaded:', shortcuts);
         
         const list = document.getElementById('shortcuts-list');
         list.innerHTML = '';
         
-        for (const [id, shortcut] of Object.entries(shortcuts)) {
+        const shortcutEntries = Object.entries(shortcuts);
+        
+        if (shortcutEntries.length === 0) {
+            list.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">Нет настроенных команд</p>';
+            return;
+        }
+        
+        for (const [id, shortcut] of shortcutEntries) {
             const item = document.createElement('div');
             item.className = 'shortcut-item';
             item.innerHTML = `
@@ -208,6 +222,8 @@ async function loadShortcuts() {
         }
     } catch (error) {
         console.error('Shortcuts load error:', error);
+        const list = document.getElementById('shortcuts-list');
+        list.innerHTML = '<p style="color: #e74c3c; text-align: center; padding: 20px;">Ошибка загрузки команд</p>';
     }
 }
 
@@ -244,16 +260,26 @@ document.getElementById('shortcut-form').addEventListener('submit', async (e) =>
 
 // Delete shortcut
 window.deleteShortcut = async (id) => {
-    if (confirm('Удалить команду?')) {
+    if (confirm(`Удалить команду "${id}"?`)) {
         try {
-            const response = await fetch(`/api/shortcuts/${id}`, { method: 'DELETE' });
+            console.log('Deleting shortcut:', id);
+            const response = await fetch(`/api/shortcuts/${encodeURIComponent(id)}`, { 
+                method: 'DELETE' 
+            });
+            
             const data = await response.json();
+            console.log('Delete response:', data);
+            
             if (data.success) {
-                loadShortcuts();
+                console.log('Shortcut deleted successfully, reloading list...');
+                // Immediately reload shortcuts list
+                await loadShortcuts();
+                alert('Команда удалена успешно!');
             } else {
                 alert(`Ошибка: ${data.error}`);
             }
         } catch (error) {
+            console.error('Delete error:', error);
             alert('Ошибка подключения к серверу');
         }
     }
@@ -267,6 +293,11 @@ async function loadUsers() {
         
         const list = document.getElementById('users-list');
         list.innerHTML = '';
+        
+        if (users.length === 0) {
+            list.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">Нет авторизованных пользователей</p>';
+            return;
+        }
         
         users.forEach(userId => {
             const item = document.createElement('div');

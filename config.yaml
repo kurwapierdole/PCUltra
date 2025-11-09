@@ -6,16 +6,7 @@ bot:
   token: 7789747238:AAFrad7uAYucP-2Vi1VmxOlMcKelLcaXS5M
 permissions: {}
 shortcuts:
-  shortcut_1:
-    action: launch_app
-    args: []
-    command: /vpn
-    path: C:\Program Files\AmneziaVPN\AmneziaVPN.exe
-  vpn:
-    action: launch_app
-    args: []
-    command: /vpn
-    path: C:\Program Files\AmneziaVPN\client.exe
+
 web:
   admin_password_hash: $2b$12$3g71.M9Xi/79iAqxqmDnkO51w8YbhY5TTWz8Jx/vE/1JVvEofItbu
   admin_username: emivite
