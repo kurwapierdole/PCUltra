@@ -56,7 +56,10 @@ class BotAgent:
             return
             
         config = self.config_manager.get_config()
-        token = config['bot']['token']
+        # Ensure bot config exists
+        if 'bot' not in config:
+            config['bot'] = {}
+        token = config['bot'].get('token', '')
         if not token:
             raise ValueError("Telegram bot token not configured")
             
@@ -101,7 +104,10 @@ class BotAgent:
         asyncio.set_event_loop(self.event_loop)
         
         config = self.config_manager.get_config()
-        token = config['bot']['token']
+        # Ensure bot config exists
+        if 'bot' not in config:
+            config['bot'] = {}
+        token = config['bot'].get('token', '')
         
         # Create application
         self.application = Application.builder().token(token).build()
@@ -611,16 +617,19 @@ class BotAgent:
             
         try:
             await update.message.reply_text("🌐 Открываю браузер и перехожу на URL...")
+            
+            # Run in executor to avoid blocking
+            def navigate():
+                self.controller.browser_navigate(url)
+            
             executor = get_playwright_executor()
             loop = asyncio.get_event_loop()
+            await loop.run_in_executor(executor, navigate)
             
-            # Используем public-функцию
-            await loop.run_in_executor(executor, self.controller.browser_navigate, url)
-            
-            await update.message.reply_text(f"✅ Переход на: {url}", reply_markup=self._get_main_menu())
+            await update.message.reply_text(f"✅ URL открыт в системном браузере: {url}", reply_markup=self._get_main_menu())
             
         except Exception as e:
-            logger.error(f"Browser navigate error: {e}")
+            logger.error(f"Browser navigate error: {e}", exc_info=True)
             await update.message.reply_text(f"❌ Ошибка: {str(e)}", reply_markup=self._get_main_menu())
             
         return ConversationHandler.END
@@ -693,12 +702,12 @@ class BotAgent:
             # Action status
             elif data == "action_status":
                 if not await self._check_permission(update, "status"): return
-                await self._handle_status_action(query)
+                await self._handle_status_action(query, context)
                 
             # Screenshot action
             elif data == "action_screenshot":
                 if not await self._check_permission(update, "screenshot"): return
-                await self._handle_screenshot_action(query)
+                await self._handle_screenshot_action(query, context)
             
             # Shortcut action
             elif data.startswith("shortcut_"):
@@ -804,72 +813,89 @@ class BotAgent:
             logger.error(f"Media action error: {e}")
             await query.answer(f"❌ Медиа-ошибка: {str(e)}", show_alert=True)
 
-    async def _handle_status_action(self, query: Update.callback_query):
+    async def _handle_status_action(self, query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE):
         """Handle status request"""
         try:
-            cpu_percent = psutil.cpu_percent()
+            # Get CPU usage with interval to get accurate reading
+            cpu_percent = psutil.cpu_percent(interval=0.1)
             mem_info = psutil.virtual_memory()
             disk_info = psutil.disk_usage(os.path.abspath(os.sep))
             
             status_text = (
                 "📊 Статус ПК:\n"
-                f"CPU: {cpu_percent}%\n"
-                f"RAM: {mem_info.percent}% ({mem_info.used // (1024**3)}G/{mem_info.total // (1024**3)}G)\n"
-                f"Disk C:\\: {disk_info.percent}% ({disk_info.used // (1024**3)}G/{disk_info.total // (1024**3)}G)"
+                f"CPU: {cpu_percent:.1f}%\n"
+                f"RAM: {mem_info.percent:.1f}% ({mem_info.used // (1024**3)}G/{mem_info.total // (1024**3)}G)\n"
+                f"Disk C:\\: {disk_info.percent:.1f}% ({disk_info.used // (1024**3)}G/{disk_info.total // (1024**3)}G)"
             )
             await query.answer(status_text, show_alert=True)
             
         except Exception as e:
-            logger.error(f"Status check error: {e}")
+            logger.error(f"Status check error: {e}", exc_info=True)
             await query.answer(f"❌ Ошибка статуса: {str(e)}", show_alert=True)
 
-    async def _handle_screenshot_action(self, query: Update.callback_query):
+    async def _handle_screenshot_action(self, query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE):
         """Handle full screenshot request"""
         await query.answer("📸 Делаю скриншот...")
+        filepath = None
         try:
             filepath = self.controller.screenshot_full()
             
-            # Send photo
-            await query.bot.send_photo(
-                chat_id=query.message.chat_id,
+            # Get chat_id from message or callback query
+            chat_id = query.message.chat.id if query.message else query.from_user.id
+            
+            # Send photo using context.bot - python-telegram-bot accepts file path directly
+            await context.bot.send_photo(
+                chat_id=chat_id,
                 photo=filepath,
                 caption="📸 Полный скриншот"
             )
             
-            # Clean up
-            os.remove(filepath)
-            await query.edit_message_reply_markup(reply_markup=self._get_main_menu())
-            
+            # Clean up after sending
+            if filepath and os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup screenshot file: {cleanup_error}")
+                
         except Exception as e:
-            logger.error(f"Screenshot error: {e}")
+            logger.error(f"Screenshot error: {e}", exc_info=True)
+            # Clean up on error
+            if filepath and os.path.exists(filepath):
+                try:
+                    os.remove(filepath)
+                except:
+                    pass
             await query.edit_message_text(f"❌ Ошибка скриншота: {str(e)}", reply_markup=self._get_main_menu())
 
     async def _handle_browser_action(self, data, query: Update.callback_query):
         """Handle browser open and close actions"""
         action = data.replace("browser_", "")
         
-        # Run in playwright thread
-        def run_browser_action():
-            if action == "open":
-                self.controller.browser_open()
-                return "🌐 Браузер открыт."
-            elif action == "close":
-                self.controller.browser_close()
-                return "❌ Браузер закрыт."
-            else:
-                return "Неизвестное действие браузера."
-        
         try:
             await query.answer(f"Выполняю: {action}...")
+            
+            # Run browser action in executor to avoid blocking
+            def run_browser_action():
+                if action == "open":
+                    self.controller.browser_open()
+                    return "🌐 Браузер открыт (системный браузер по умолчанию)."
+                elif action == "close":
+                    result = self.controller.browser_close()
+                    if result:
+                        return "❌ Браузер закрыт."
+                    else:
+                        return "⚠️ Браузер не найден или уже закрыт."
+                else:
+                    return "Неизвестное действие браузера."
+            
             executor = get_playwright_executor()
             loop = asyncio.get_event_loop()
-            
             result_msg = await loop.run_in_executor(executor, run_browser_action)
             
             await query.edit_message_text(result_msg, reply_markup=self._get_browser_menu())
             
         except Exception as e:
-            logger.error(f"Browser action error: {e}")
+            logger.error(f"Browser action error: {e}", exc_info=True)
             await query.edit_message_text(f"❌ Ошибка: {str(e)}", reply_markup=self._get_browser_menu())
 
     async def _handle_shortcut_action(self, data, query: Update.callback_query):
@@ -887,26 +913,75 @@ class BotAgent:
             await query.answer("❌ Ярлык не найден.", show_alert=True)
             return
 
-        command_line = shortcut.get('command')
-        display_name = shortcut.get('display_name', command_line)
+        display_name = shortcut.get('display_name', shortcut.get('command', shortcut_id))
+        action = shortcut.get('action', 'launch_app')
+        path = shortcut.get('path', '')
+        args = shortcut.get('args', [])
 
-        if not command_line:
-            await query.answer(f"❌ Команда для '{display_name}' не определена.", show_alert=True)
+        # Handle args - может быть список или строка
+        if isinstance(args, str):
+            if args:
+                args = [arg.strip() for arg in args.split(',') if arg.strip()]
+            else:
+                args = []
+        elif not isinstance(args, list):
+            args = []
+
+        if not path:
+            await query.answer(f"❌ Путь для '{display_name}' не определён.", show_alert=True)
             return
 
         await query.answer(f"⚡ Запуск: {display_name}")
 
         try:
-            # Используем shlex для безопасного разделения команд с аргументами
-            args = shlex.split(command_line)
-            app_path = args[0]
-            app_args = args[1:]
-            
-            self.controller.open_app(app_path, app_args)
-            await query.edit_message_text(f"✅ Запущено: {display_name}", reply_markup=self._get_shortcuts_menu())
+            if action == 'launch_app':
+                # Запуск приложения
+                if not os.path.exists(path):
+                    raise FileNotFoundError(f"Файл не найден: {path}")
+                self.controller.open_app(path, args)
+                await query.edit_message_text(f"✅ Запущено: {display_name}", reply_markup=self._get_shortcuts_menu())
+                
+            elif action == 'open_url':
+                # Открытие URL в браузере
+                url = path.strip()
+                # Добавляем http:// если протокол не указан
+                if not url.startswith(('http://', 'https://')):
+                    url = 'http://' + url
+                
+                await query.edit_message_text(f"🌐 Открываю URL: {url}...")
+                
+                # Run in executor to avoid blocking
+                def navigate():
+                    self.controller.browser_navigate(url)
+                
+                executor = get_playwright_executor()
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(executor, navigate)
+                
+                await query.edit_message_text(f"✅ URL открыт в системном браузере: {url}", reply_markup=self._get_shortcuts_menu())
+                
+            elif action == 'execute_script':
+                # Выполнение скрипта/команды
+                import subprocess
+                # Если path - это путь к скрипту, запускаем его
+                if os.path.exists(path):
+                    # Запускаем скрипт с аргументами
+                    cmd = [path] + args
+                    subprocess.Popen(cmd, shell=False)
+                    await query.edit_message_text(f"✅ Скрипт выполнен: {display_name}", reply_markup=self._get_shortcuts_menu())
+                else:
+                    # Если path не существует как файл, пробуем выполнить как команду
+                    import shlex
+                    cmd_parts = shlex.split(path)
+                    if args:
+                        cmd_parts.extend(args)
+                    subprocess.Popen(cmd_parts, shell=False)
+                    await query.edit_message_text(f"✅ Команда выполнена: {display_name}", reply_markup=self._get_shortcuts_menu())
+            else:
+                await query.edit_message_text(f"❌ Неизвестный тип действия: {action}", reply_markup=self._get_shortcuts_menu())
 
-        except FileNotFoundError:
-            await query.edit_message_text(f"❌ Ошибка: Файл не найден по пути: {app_path}", reply_markup=self._get_shortcuts_menu())
+        except FileNotFoundError as e:
+            await query.edit_message_text(f"❌ Ошибка: Файл не найден: {str(e)}", reply_markup=self._get_shortcuts_menu())
         except Exception as e:
-            logger.error(f"Shortcut action error for {command_line}: {e}")
-            await query.edit_message_text(f"❌ Ошибка при запуске '{display_name}': {str(e)}", reply_markup=self._get_shortcuts_menu())
+            logger.error(f"Shortcut action error for {display_name}: {e}", exc_info=True)
+            await query.edit_message_text(f"❌ Ошибка при выполнении '{display_name}': {str(e)}", reply_markup=self._get_shortcuts_menu())

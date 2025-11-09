@@ -16,6 +16,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 import asyncio
 import logging
+import webbrowser
+import psutil
 
 # --- ИМПОРТЫ ДЛЯ ЗВУКА УДАЛЕНЫ ---
 
@@ -25,21 +27,13 @@ logger = logging.getLogger(__name__)
 # Disable PyAutoGUI failsafe for remote control
 pyautogui.FAILSAFE = False
 
-# Global Playwright state (thread-safe)
-_playwright_state = {
-    'playwright': None,
-    'browser': None,
-    'context': None,
-    'page': None,
-    'lock': threading.Lock()
-}
-
-# Thread pool for Playwright operations (single worker to ensure same thread)
-_playwright_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="playwright")
+# Browser process tracking for closing
+_browser_processes = []
+_browser_lock = threading.Lock()
 
 def get_playwright_executor():
-    """Get Playwright executor for use in async context"""
-    return _playwright_executor
+    """Get executor for async operations (kept for compatibility)"""
+    return ThreadPoolExecutor(max_workers=1, thread_name_prefix="browser")
 
 
 class PCController:
@@ -51,10 +45,6 @@ class PCController:
     
     # --- ФУНКЦИИ _get_audio_endpoint и _ensure_audio_endpoint УДАЛЕНЫ ---
 
-    def _run_in_playwright_thread(self, func, *args, **kwargs):
-        """Run function in Playwright thread using executor"""
-        future = _playwright_executor.submit(func, *args, **kwargs)
-        return future.result(timeout=30)
     
     
     def mouse_move(self, x, y):
@@ -157,116 +147,129 @@ class PCController:
             print(f"Notification error: {e}")
     
     
-    def _browser_open_sync(self):
-        from playwright.sync_api import sync_playwright
-        with _playwright_state['lock']:
-            if _playwright_state['page']:
-                try: _playwright_state['page'].close()
-                except: pass
-            if _playwright_state['context']:
-                try: _playwright_state['context'].close()
-                except: pass
-            if _playwright_state['browser']:
-                try: _playwright_state['browser'].close()
-                except: pass
-            if _playwright_state['playwright']:
-                try: _playwright_state['playwright'].stop()
-                except: pass
-            _playwright_state['playwright'] = sync_playwright().start()
-            _playwright_state['browser'] = _playwright_state['playwright'].chromium.launch(headless=False)
-            _playwright_state['context'] = _playwright_state['browser'].new_context()
-            _playwright_state['page'] = _playwright_state['context'].new_page()
-        return True
-    
-    def browser_open(self):
+    def browser_open(self, url=None):
+        """Open default system browser"""
         try:
-            return self._run_in_playwright_thread(self._browser_open_sync)
+            # Use yandex.ru as default URL to open browser
+            target_url = url if url else 'https://yandex.ru'
+            
+            # Ensure URL has protocol
+            if not target_url.startswith(('http://', 'https://')):
+                target_url = 'https://' + target_url
+            
+            # On Windows, use subprocess with 'start' command which respects default browser
+            # This is more reliable than webbrowser module or os.startfile for URLs
+            if os.name == 'nt':  # Windows
+                # Use subprocess to run 'start' command which opens URL in default browser
+                subprocess.Popen(['start', target_url], shell=True)
+            else:
+                # For other OS, use webbrowser module
+                browser = webbrowser.get()
+                browser.open(target_url)
+            
+            # Track browser process for potential closing
+            with _browser_lock:
+                _browser_processes.append(time.time())
+                # Keep only last 10 entries
+                if len(_browser_processes) > 10:
+                    _browser_processes.pop(0)
+            
+            return True
         except Exception as e:
+            logger.error(f"Failed to open browser: {e}")
             raise RuntimeError(f"Failed to open browser: {e}")
     
-    def _browser_navigate_sync(self, url):
-        with _playwright_state['lock']:
-            if not _playwright_state['page'] or not _playwright_state['playwright']:
-                if _playwright_state['page']:
-                    try: _playwright_state['page'].close()
-                    except: pass
-                if _playwright_state['context']:
-                    try: _playwright_state['context'].close()
-                    except: pass
-                if _playwright_state['browser']:
-                    try: _playwright_state['browser'].close()
-                    except: pass
-                if _playwright_state['playwright']:
-                    try: _playwright_state['playwright'].stop()
-                    except: pass
-                from playwright.sync_api import sync_playwright
-                _playwright_state['playwright'] = sync_playwright().start()
-                _playwright_state['browser'] = _playwright_state['playwright'].chromium.launch(headless=False)
-                _playwright_state['context'] = _playwright_state['browser'].new_context()
-                _playwright_state['page'] = _playwright_state['context'].new_page()
-            _playwright_state['page'].goto(url, wait_until='domcontentloaded', timeout=30000)
-        return True
-    
     def browser_navigate(self, url):
+        """Navigate to URL in default system browser"""
         try:
-            return self._run_in_playwright_thread(self._browser_navigate_sync, url)
+            # Ensure URL has protocol (prefer https)
+            if not url.startswith(('http://', 'https://')):
+                url = 'https://' + url
+            
+            # On Windows, use subprocess with 'start' command which respects default browser
+            # This is more reliable than webbrowser module or os.startfile for URLs
+            if os.name == 'nt':  # Windows
+                # Use subprocess to run 'start' command which opens URL in default browser
+                subprocess.Popen(['start', url], shell=True)
+            else:
+                # For other OS, use webbrowser module
+                browser = webbrowser.get()
+                browser.open(url)
+            
+            # Track browser process
+            with _browser_lock:
+                _browser_processes.append(time.time())
+                if len(_browser_processes) > 10:
+                    _browser_processes.pop(0)
+            
+            return True
         except Exception as e:
+            logger.error(f"Failed to navigate to URL: {e}")
             raise RuntimeError(f"Failed to navigate: {e}")
     
-    def _browser_click_sync(self, selector):
-        with _playwright_state['lock']:
-            if not _playwright_state['page']:
-                raise RuntimeError("Browser not open")
-            _playwright_state['page'].click(selector)
-        return True
+    def browser_close(self):
+        """Close browser windows (closes all browser processes)"""
+        try:
+            # Common browser process names on Windows
+            browser_names = [
+                'chrome.exe',
+                'msedge.exe',
+                'firefox.exe',
+                'opera.exe',
+                'brave.exe',
+                'vivaldi.exe',
+                'iexplore.exe'
+            ]
+            
+            closed_count = 0
+            
+            # Find and close all browser processes
+            # Note: This closes ALL browser processes on the system
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    proc_name = proc.info['name'].lower()
+                    if any(browser in proc_name for browser in browser_names):
+                        try:
+                            # Try graceful termination first
+                            proc.terminate()
+                            # Wait up to 3 seconds for process to terminate
+                            try:
+                                proc.wait(timeout=3)
+                            except psutil.TimeoutExpired:
+                                # Force kill if terminate didn't work
+                                proc.kill()
+                                proc.wait(timeout=1)
+                            closed_count += 1
+                            logger.info(f"Closed browser process: {proc_name} (PID: {proc.info['pid']})")
+                        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                            logger.warning(f"Could not close process {proc_name} (PID: {proc.info['pid']}): {e}")
+                        except psutil.TimeoutExpired:
+                            logger.warning(f"Process {proc_name} (PID: {proc.info['pid']}) did not terminate in time")
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+            
+            # Clear tracked processes
+            with _browser_lock:
+                _browser_processes.clear()
+            
+            if closed_count > 0:
+                logger.info(f"Closed {closed_count} browser process(es)")
+                return True
+            else:
+                logger.info("No browser processes found to close")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error closing browser: {e}", exc_info=True)
+            return False
     
     def browser_click(self, selector):
-        try:
-            return self._run_in_playwright_thread(self._browser_click_sync, selector)
-        except Exception as e:
-            raise RuntimeError(f"Failed to click: {e}")
-    
-    def _browser_execute_js_sync(self, js_code):
-        with _playwright_state['lock']:
-            if not _playwright_state['page']:
-                raise RuntimeError("Browser not open")
-            return _playwright_state['page'].evaluate(js_code)
+        """Browser click not supported with system browser"""
+        raise NotImplementedError("Browser click is not supported when using system browser. Use Playwright for advanced browser control.")
     
     def browser_execute_js(self, js_code):
-        try:
-            return self._run_in_playwright_thread(self._browser_execute_js_sync, js_code)
-        except Exception as e:
-            raise RuntimeError(f"Failed to execute JS: {e}")
-    
-    def _browser_close_sync(self):
-        with _playwright_state['lock']:
-            if _playwright_state['page']:
-                try:
-                    _playwright_state['page'].close()
-                    _playwright_state['page'] = None
-                except: pass
-            if _playwright_state['context']:
-                try:
-                    _playwright_state['context'].close()
-                    _playwright_state['context'] = None
-                except: pass
-            if _playwright_state['browser']:
-                try:
-                    _playwright_state['browser'].close()
-                    _playwright_state['browser'] = None
-                except: pass
-            if _playwright_state['playwright']:
-                try:
-                    _playwright_state['playwright'].stop()
-                    _playwright_state['playwright'] = None
-                except: pass
-        return True
-    
-    def browser_close(self):
-        try:
-            return self._run_in_playwright_thread(self._browser_close_sync)
-        except Exception as e:
-            print(f"Error closing browser: {e}")
+        """Browser JS execution not supported with system browser"""
+        raise NotImplementedError("Browser JS execution is not supported when using system browser. Use Playwright for advanced browser control.")
 
     # --- ФУНКЦИИ ГРОМКОСТИ УДАЛЕНЫ (get_volume, set_volume, volume_up/down, toggle_mute, is_muted) ---
     

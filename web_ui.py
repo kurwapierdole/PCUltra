@@ -7,6 +7,7 @@ Web UI for PCUltra
 import os
 import json
 import logging
+import time
 import yaml
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session
 from flask_login import LoginManager, login_user, logout_user, login_required, UserMixin
@@ -34,6 +35,13 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
     
     # Load configuration
     config = config_manager.get_config()
+    # Ensure config has required structure
+    if 'web' not in config:
+        config['web'] = {}
+    if not config['web'].get('secret_key'):
+        import secrets
+        config['web']['secret_key'] = secrets.token_hex(32)
+        config_manager.update_config({'web': {'secret_key': config['web']['secret_key']}})
     app.config['SECRET_KEY'] = config['web']['secret_key']
     
     # Enable CORS
@@ -210,7 +218,6 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
                 if 'bot' in data:
                     # Stop bot properly
                     system_tray_app.bot_agent.stop()
-                    import time
                     time.sleep(2)  # Wait for bot to stop
                     system_tray_app.bot_agent = None
                     # Restart bot
@@ -266,7 +273,6 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
                 if system_tray_app.bot_agent:
                     system_tray_app.bot_agent.stop()
                     # Wait for bot to stop completely
-                    import time
                     time.sleep(3)
                     system_tray_app.bot_agent = None
                 
@@ -285,14 +291,17 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
     @login_required
     def api_get_shortcuts():
         """Get shortcuts"""
-        # Reload config to get fresh data
-        config_manager.load_config()
-        config = config_manager.get_config()
-        shortcuts = config.get('shortcuts', {})
-        # Ensure shortcuts is a dict
-        if shortcuts is None:
-            shortcuts = {}
-        return jsonify(shortcuts)
+        try:
+            # Get config (get_config() will load if needed, but safely)
+            config = config_manager.get_config()
+            shortcuts = config.get('shortcuts', {})
+            # Ensure shortcuts is a dict
+            if shortcuts is None:
+                shortcuts = {}
+            return jsonify(shortcuts)
+        except Exception as e:
+            logger.error(f"Error getting shortcuts: {e}", exc_info=True)
+            return jsonify({'error': str(e)}), 500
     
     @app.route('/api/shortcuts', methods=['POST'])
     @login_required
@@ -318,9 +327,14 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
             shortcut_id = command.lstrip('/')
             
             # Parse args from string to list
-            args = data.get('args', '')
+            args = data.get('args', [])
             if isinstance(args, str):
-                args = [arg.strip() for arg in args.split(',') if arg.strip()]
+                if args:
+                    args = [arg.strip() for arg in args.split(',') if arg.strip()]
+                else:
+                    args = []
+            elif not isinstance(args, list):
+                args = []
             
             # Read current config with retry logic
             max_retries = 3
@@ -353,9 +367,8 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
                         with open(config_manager.config_path, 'w', encoding='utf-8') as f:
                             yaml.dump(file_config, f, default_flow_style=False, allow_unicode=True)
                         
-                        # Force reload in memory
-                        config_manager.config = None
-                        config_manager.load_config()
+                        # Update in-memory config directly (don't call load_config() as it would try to acquire lock again)
+                        config_manager.config = file_config
                     
                     logger.info(f"Successfully added shortcut: {shortcut_id}")
                     return jsonify({'success': True, 'id': shortcut_id})
@@ -408,15 +421,13 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
                             with open(config_manager.config_path, 'w', encoding='utf-8') as f:
                                 yaml.dump(file_config, f, default_flow_style=False, allow_unicode=True)
                             
-                            # Force reload in memory
-                            config_manager.config = None
-                            config_manager.load_config()
+                            # Update in-memory config directly (don't call load_config() as it would try to acquire lock again)
+                            config_manager.config = file_config
                             
                             logger.info(f"Successfully deleted shortcut: {shortcut_id}")
                             
-                            # Verify deletion
-                            verify_config = config_manager.get_config()
-                            verify_shortcuts = verify_config.get('shortcuts', {})
+                            # Verify deletion (config is already updated in memory)
+                            verify_shortcuts = file_config.get('shortcuts', {})
                             logger.info(f"Verification - shortcuts in memory: {list(verify_shortcuts.keys() if verify_shortcuts else [])}")
                             
                             return jsonify({'success': True, 'reload': True})

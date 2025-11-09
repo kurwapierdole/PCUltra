@@ -8,8 +8,11 @@ import os
 import yaml
 import secrets
 import bcrypt
+import logging
 from pathlib import Path
 from threading import Lock
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigManager:
@@ -26,8 +29,18 @@ class ConfigManager:
             self.create_default_config()
         self.load_config()
         
+        # Ensure config has required structure
+        if 'web' not in self.config:
+            self.config['web'] = {}
+        if 'bot' not in self.config:
+            self.config['bot'] = {}
+        if 'shortcuts' not in self.config:
+            self.config['shortcuts'] = {}
+        if 'permissions' not in self.config:
+            self.config['permissions'] = {}
+        
         # Generate secret key if not set
-        if not self.config['web']['secret_key']:
+        if not self.config['web'].get('secret_key'):
             self.config['web']['secret_key'] = secrets.token_hex(32)
             self.save_config()
     
@@ -89,8 +102,6 @@ class ConfigManager:
         """Save configuration to file"""
         with self.lock:
             try:
-                import logging
-                logger = logging.getLogger(__name__)
                 logger.info(f"Saving config. Shortcuts to save: {list(self.config.get('shortcuts', {}).keys())}")
                 
                 # Create backup before saving
@@ -136,13 +147,14 @@ class ConfigManager:
         self.load_config()
         
         # Log for debugging
-        import logging
-        logger = logging.getLogger(__name__)
         logger.info(f"Config updated. Current shortcuts: {list(self.config.get('shortcuts', {}).keys())}")
     
     def is_user_authorized(self, user_id):
         """Check if user is authorized"""
         config = self.get_config()
+        # Ensure bot config exists
+        if 'bot' not in config:
+            config['bot'] = {}
         authorized_users = config['bot'].get('authorized_users', [])
         
         # Handle case when authorized_users is None or empty list

@@ -6,7 +6,10 @@ Main entry point with system tray integration
 """
 
 import sys
+import os
 import threading
+import time
+import subprocess
 import pystray
 from PIL import Image, ImageDraw
 from werkzeug.serving import make_server
@@ -53,8 +56,17 @@ class SystemTrayApp:
     def open_web_ui(self, icon=None, item=None):
         """Open web UI in default browser"""
         config = self.config_manager.get_config()
-        url = f"http://{config['web']['host']}:{config['web']['port']}"
-        webbrowser.open(url)
+        # Ensure web config exists
+        if 'web' not in config:
+            config['web'] = {'host': '127.0.0.1', 'port': 5000}
+        host = config['web'].get('host', '127.0.0.1')
+        port = config['web'].get('port', 5000)
+        url = f"http://{host}:{port}"
+        # On Windows, use subprocess with 'start' command for reliable default browser opening
+        if os.name == 'nt':
+            subprocess.Popen(['start', url], shell=True)
+        else:
+            webbrowser.open(url)
     
     
     def show_bot_status(self, icon, item):
@@ -92,14 +104,19 @@ class SystemTrayApp:
         """Start web UI server in separate thread"""
         app = create_app(self.config_manager, self)
         config = self.config_manager.get_config()
+        # Ensure web config exists
+        if 'web' not in config:
+            config['web'] = {'host': '127.0.0.1', 'port': 5000}
+        host = config['web'].get('host', '127.0.0.1')
+        port = config['web'].get('port', 5000)
         self.web_server = make_server(
-            config['web']['host'],
-            config['web']['port'],
+            host,
+            port,
             app
         )
         self.web_thread = threading.Thread(target=self.web_server.serve_forever, daemon=True)
         self.web_thread.start()
-        print(f"Web UI started at http://{config['web']['host']}:{config['web']['port']}")
+        print(f"Web UI started at http://{host}:{port}")
     
     def quit_application(self, icon, item):
         """Quit application"""
@@ -124,9 +141,11 @@ class SystemTrayApp:
         
         # Auto-start bot if enabled in config
         config = self.config_manager.get_config()
-        if config['bot'].get('auto_start', False) and config['bot']['token']:
+        # Ensure bot config exists
+        if 'bot' not in config:
+            config['bot'] = {}
+        if config['bot'].get('auto_start', False) and config['bot'].get('token'):
             try:
-                import time
                 time.sleep(1)  # Wait a bit for web server to start
                 self.bot_agent = BotAgent(self.config_manager)
                 self.bot_agent.start()
@@ -140,7 +159,6 @@ class SystemTrayApp:
         
         # Open Web UI automatically on startup (in background thread)
         def open_ui_delayed():
-            import time
             time.sleep(2)  # Wait for server to start
             self.open_web_ui()
         
