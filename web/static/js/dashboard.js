@@ -1,9 +1,35 @@
-// Page navigation
+// Animated background that reacts to mouse movement
+const animatedBg = document.getElementById('animatedBg');
+let mouseX = 0;
+let mouseY = 0;
+let targetX = 50;
+let targetY = 50;
+
+document.addEventListener('mousemove', (e) => {
+    mouseX = (e.clientX / window.innerWidth) * 100;
+    mouseY = (e.clientY / window.innerHeight) * 100;
+});
+
+function animateBackground() {
+    targetX += (mouseX - targetX) * 0.05;
+    targetY += (mouseY - targetY) * 0.05;
+    
+    animatedBg.style.background = `
+        radial-gradient(circle at ${targetX}% ${targetY}%, rgba(139, 92, 246, 0.4) 0%, rgba(124, 58, 237, 0.2) 40%, transparent 70%),
+        radial-gradient(circle at ${100 - targetX}% ${100 - targetY}%, rgba(168, 85, 247, 0.3) 0%, transparent 60%)
+    `;
+    
+    requestAnimationFrame(animateBackground);
+}
+
+animateBackground();
+
+// Page navigation with panel system
 document.querySelectorAll('.nav-link[data-page]').forEach(link => {
     link.addEventListener('click', (e) => {
         e.preventDefault();
         const page = link.getAttribute('data-page');
-        showPage(page);
+        showPanel(page);
         
         // Update active state
         document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
@@ -11,14 +37,20 @@ document.querySelectorAll('.nav-link[data-page]').forEach(link => {
     });
 });
 
-function showPage(pageName) {
-    document.querySelectorAll('.page').forEach(page => {
-        page.classList.remove('active');
+function showPanel(panelName) {
+    // Hide all panels
+    document.querySelectorAll('.content-panel').forEach(panel => {
+        panel.classList.remove('active');
     });
-    document.getElementById(`${pageName}-page`).classList.add('active');
     
-    // Reload data when switching to shortcuts page
-    if (pageName === 'shortcuts') {
+    // Show selected panel
+    const panel = document.getElementById(`${panelName}-panel`);
+    if (panel) {
+        panel.classList.add('active');
+    }
+    
+    // Reload data when switching to shortcuts panel
+    if (panelName === 'shortcuts') {
         loadShortcuts();
     }
 }
@@ -204,7 +236,7 @@ async function loadShortcuts() {
         const shortcutEntries = Object.entries(shortcuts);
         
         if (shortcutEntries.length === 0) {
-            list.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">Нет настроенных команд</p>';
+            list.innerHTML = '<p style="color: #c4b5fd; text-align: center; padding: 20px;">Нет настроенных команд</p>';
             return;
         }
         
@@ -223,7 +255,7 @@ async function loadShortcuts() {
     } catch (error) {
         console.error('Shortcuts load error:', error);
         const list = document.getElementById('shortcuts-list');
-        list.innerHTML = '<p style="color: #e74c3c; text-align: center; padding: 20px;">Ошибка загрузки команд</p>';
+        list.innerHTML = '<p style="color: #ef4444; text-align: center; padding: 20px;">Ошибка загрузки команд</p>';
     }
 }
 
@@ -273,7 +305,6 @@ window.deleteShortcut = async (id) => {
             
             if (data.success) {
                 console.log('Shortcut deleted successfully, reloading list...');
-                // Immediately reload shortcuts list
                 await loadShortcuts();
                 alert('Команда удалена успешно!');
             } else {
@@ -296,7 +327,7 @@ async function loadUsers() {
         list.innerHTML = '';
         
         if (users.length === 0) {
-            list.innerHTML = '<p style="color: #666; text-align: center; padding: 20px;">Нет авторизованных пользователей</p>';
+            list.innerHTML = '<p style="color: #c4b5fd; text-align: center; padding: 20px;">Нет авторизованных пользователей</p>';
             return;
         }
         

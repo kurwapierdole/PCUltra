@@ -13,8 +13,8 @@ shortcuts:
     display_name: name
     path: https://vk.com
 web:
-  admin_password_hash: $2b$12$3g71.M9Xi/79iAqxqmDnkO51w8YbhY5TTWz8Jx/vE/1JVvEofItbu
-  admin_username: emivite
+  admin_password_hash: $2b$12$7XxC72kaeqazBXgcjBw5XOoJiCFUriEGjBBJlBeKWJLg8zH4uAKQ2
+  admin_username: admin
   host: 127.0.0.1
   port: 5000
-  secret_key: 462b5a563837b5176dfd8729cbcea2d9520e20d283e2939c0bc41d49e58a781a
+  secret_key: 446e3342f4a5cc4cbec85f42c9c736d99a002ee25f2cc0b45665c14d93065867

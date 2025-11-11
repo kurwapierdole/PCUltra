@@ -6,44 +6,74 @@
 
 body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    background: linear-gradient(180deg, #6b21a8 0%, #000 100%);
     min-height: 100vh;
     display: flex;
     justify-content: center;
     align-items: center;
+    color: #f3e8ff;
+    position: relative;
+    overflow: hidden;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: 
+        radial-gradient(circle at 30% 40%, rgba(139, 92, 246, 0.2) 0%, transparent 50%),
+        radial-gradient(circle at 70% 60%, rgba(124, 58, 237, 0.15) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
 }
 
 .login-container {
     width: 100%;
     max-width: 400px;
     padding: 20px;
+    position: relative;
+    z-index: 1;
 }
 
 .login-box {
-    background: white;
-    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 15px;
     padding: 40px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    position: relative;
+    overflow: hidden;
 }
 
 .login-box h1 {
     text-align: center;
-    color: #667eea;
+    color: #e9d5ff;
     margin-bottom: 10px;
     font-size: 2em;
+    text-shadow: 
+        0 2px 8px rgba(0,0,0,0.3),
+        0 1px 2px rgba(255,255,255,0.1);
+    font-weight: 700;
+    letter-spacing: -0.5px;
 }
 
 .login-box h2 {
     text-align: center;
-    color: #666;
+    color: #f3e8ff;
     margin-bottom: 10px;
     font-size: 1.2em;
-    font-weight: normal;
+    font-weight: 500;
+    text-shadow: 0 1px 4px rgba(0,0,0,0.2);
 }
 
 .info-text {
     text-align: center;
-    color: #888;
+    color: #c4b5fd;
     margin-bottom: 30px;
     font-size: 0.9em;
     line-height: 1.4;
@@ -56,38 +86,56 @@ body {
 .form-group label {
     display: block;
     margin-bottom: 5px;
-    color: #333;
+    color: #e6fff6;
     font-weight: 500;
 }
 
 .form-group input {
     width: 100%;
     padding: 12px;
-    border: 1px solid #ddd;
-    border-radius: 5px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.2);
+    color: #e9fff7;
+    border-radius: 15px;
     font-size: 16px;
-    transition: border-color 0.3s;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    transition: all 0.3s ease;
 }
 
 .form-group input:focus {
     outline: none;
-    border-color: #667eea;
+    border-color: rgba(139, 92, 246, 0.6);
+    background: rgba(255, 255, 255, 0.25);
+    box-shadow: 0 8px 32px 0 rgba(139, 92, 246, 0.5);
 }
 
 .btn-primary {
     width: 100%;
-    padding: 12px;
-    background: #667eea;
-    color: white;
+    padding: 14px;
+    background: rgba(139, 92, 246, 0.8);
+    color: #ffffff;
     border: none;
-    border-radius: 5px;
+    border-radius: 15px;
     font-size: 16px;
+    font-weight: 600;
     cursor: pointer;
-    transition: background 0.3s;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+    border: 1px solid rgba(139, 92, 246, 0.3);
 }
 
 .btn-primary:hover {
-    background: #5568d3;
+    background: rgba(139, 92, 246, 1);
+    transform: translateY(-2px);
+    box-shadow: 0 12px 40px 0 rgba(139, 92, 246, 0.5);
+}
+
+.btn-primary:active {
+    transform: translateY(0);
 }
 
 .error-message {
@@ -95,4 +143,46 @@ body {
     margin-top: 10px;
     text-align: center;
     display: none;
+}
+
+.brand {
+    display: grid;
+    place-items: center;
+    margin-bottom: 18px;
+}
+
+.brand-badge {
+    width: 58px;
+    height: 58px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+    color: #ffffff;
+    font-weight: 800;
+    display: grid;
+    place-items: center;
+    box-shadow: 
+        0 8px 32px rgba(139, 92, 246, 0.4),
+        inset 0 1px 0 rgba(255,255,255,0.4),
+        inset 0 -1px 0 rgba(0,0,0,0.2);
+    position: relative;
+    overflow: hidden;
+}
+
+.brand-badge::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: linear-gradient(45deg, 
+        transparent 30%, 
+        rgba(255,255,255,0.3) 50%, 
+        transparent 70%);
+    animation: shine 3s infinite;
+}
+
+@keyframes shine {
+    0% { transform: translateX(-100%) translateY(-100%) rotate(45deg); }
+    100% { transform: translateX(100%) translateY(100%) rotate(45deg); }
 }
