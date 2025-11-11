@@ -3,175 +3,165 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PCUltra - Dashboard</title>
+    <meta name="description" content="Панель управления PCUltra - централизованное управление Telegram-ботом для управления ПК">
+    <title>PCUltra - Панель управления</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/dashboard.css') }}">
-    <style>
-        /* Toggle Switch */
-        .switch-label {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            width: 100%;
-        }
-        
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 50px;
-            height: 24px;
-        }
-        
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: .4s;
-            border-radius: 24px;
-        }
-        
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 18px;
-            width: 18px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .4s;
-            border-radius: 50%;
-        }
-        
-        input:checked + .slider {
-            background-color: #8b5cf6;
-        }
-        
-        input:checked + .slider:before {
-            transform: translateX(26px);
-        }
-    </style>
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
 </head>
-<body>
-    <div class="animated-bg" id="animatedBg"></div>
+<body class="theme-dark">
+    <div class="animated-bg" id="animatedBg" aria-hidden="true"></div>
     <div class="layout">
-        <aside class="sidebar">
-            <div class="sidebar-header">
-                <div class="brand-icon">PC</div>
-            </div>
-            <nav class="side-menu">
-                <a href="#dashboard" class="nav-link active" data-page="dashboard">
-                    <span class="icon">
-                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg>
-                    </span>
-                    <span class="label">Панель</span>
-                </a>
-                <a href="#config" class="nav-link" data-page="config">
-                    <span class="icon">
-                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M19.14,12.94a7.43,7.43,0,0,0,.05-.94,7.43,7.43,0,0,0-.05-.94l2.11-1.65a.5.5,0,0,0,.12-.64l-2-3.46a.5.5,0,0,0-.6-.22l-2.49,1a7.28,7.28,0,0,0-1.63-.94l-.38-2.65A.5.5,0,0,0,13.72,2H10.28a.5.5,0,0,0-.49.41L9.41,5.06a7.28,7.28,0,0,0-1.63.94l-2.49-1a.5.5,0,0,0-.6.22l-2,3.46a.5.5,0,0,0,.12.64L4.86,11.06a7.43,7.43,0,0,0-.05.94,7.43,7.43,0,0,0,.05.94L2.75,14.59a.5.5,0,0,0-.12.64l2,3.46a.5.5,0,0,0,.6.22l2.49-1a7.28,7.28,0,0,0,1.63.94l.38,2.65a.5.5,0,0,0,.49.41h3.44a.5.5,0,0,0,.49-.41l.38-2.65a7.28,7.28,0,0,0,1.63-.94l2.49,1a.5.5,0,0,0,.6-.22l2-3.46a.5.5,0,0,0-.12-.64ZM12,15.5A3.5,3.5,0,1,1,15.5,12,3.5,3.5,0,0,1,12,15.5Z"/></svg>
-                    </span>
-                    <span class="label">Конфигурация</span>
-                </a>
-                <a href="#shortcuts" class="nav-link" data-page="shortcuts">
-                    <span class="icon">
-                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M9 7H7v6h2V7zm8 0h-2v6h2V7zM5 19h14v-2H5v2zM13 7h-2v6h2V7z"/></svg>
-                    </span>
-                    <span class="label">Команды</span>
-                </a>
-                <a href="#users" class="nav-link" data-page="users">
-                    <span class="icon">
-                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V20h14v-3.5C15 14.17 10.33 13 8 13zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V20h6v-3.5c0-2.33-4.67-3.5-7-3.5z"/></svg>
-                    </span>
-                    <span class="label">Пользователи</span>
-                </a>
-                <a href="{{ url_for('logout') }}" class="nav-link">
-                    <span class="icon">
-                        <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path fill="currentColor" d="M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3h-6v2h6v14h-6v2h6c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z"/></svg>
-                    </span>
-                    <span class="label">Выход</span>
-                </a>
-            </nav>
-        </aside>
-
-        <main class="main-content">
-            <div class="content-panel active" id="dashboard-panel">
-                <h1>Панель управления</h1>
-                
-                <div class="status-cards">
-                    <div class="card">
-                        <h3>Статус бота</h3>
-                        <div class="status-indicator" id="bot-status">
-                            <span class="status-dot"></span>
-                            <span id="bot-status-text">Загрузка...</span>
-                        </div>
-                        <div class="bot-controls">
-                            <button id="btn-start-bot" class="btn btn-success">Запустить</button>
-                            <button id="btn-stop-bot" class="btn btn-danger">Остановить</button>
-                            <button id="btn-restart-bot" class="btn btn-warning">Перезапустить</button>
-                        </div>
-                    </div>
-
-                    <div class="card">
-                        <h3>Использование ресурсов</h3>
-                        <div class="resource-info">
-                            <div class="resource-item">
-                                <label>CPU:</label>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" id="cpu-progress" style="width: 0%"></div>
-                                </div>
-                                <span id="cpu-text">0%</span>
-                            </div>
-                            <div class="resource-item">
-                                <label>Память:</label>
-                                <div class="progress-bar">
-                                    <div class="progress-fill" id="memory-progress" style="width: 0%"></div>
-                                </div>
-                                <span id="memory-text">0%</span>
-                            </div>
-                        </div>
+        <aside class="sidebar" role="navigation" aria-label="Основная навигация">
+            <div class="sidebar-glass">
+                <div class="sidebar-header">
+                    <div class="theme-toggle" role="group" aria-label="Переключение темы">
+                        <input type="checkbox" id="theme-switch" aria-label="Переключить светлую и тёмную темы">
+                        <label for="theme-switch" class="theme-toggle-ui">
+                            <span class="theme-toggle-track"></span>
+                            <span class="theme-toggle-icon theme-toggle-icon--moon" aria-hidden="true">
+                            </span>
+                            <span class="theme-toggle-thumb"></span>
+                        </label>
                     </div>
                 </div>
+                <nav class="side-menu">
+                    <a href="#dashboard" class="nav-link active" data-page="dashboard" aria-current="page">
+                        <span class="icon-bubble">
+                            <span class="icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <rect x="3" y="3" width="7" height="7" rx="2"></rect>
+                                    <rect x="14" y="3" width="7" height="7" rx="2"></rect>
+                                    <rect x="3" y="14" width="7" height="7" rx="2"></rect>
+                                    <rect x="14" y="14" width="7" height="7" rx="2"></rect>
+                                </svg>
+                            </span>
+                        </span>
+                        <span class="label">Панель</span>
+                    </a>
+                    <a href="#config" class="nav-link" data-page="config">
+                        <span class="icon-bubble">
+                            <span class="icon" aria-hidden="true">
+                                <svg viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M6.50001 0H9.50001L10.0939 2.37548C10.7276 2.6115 11.3107 2.95155 11.8223 3.37488L14.1782 2.70096L15.6782 5.29904L13.9173 7.00166C13.9717 7.32634 14 7.65987 14 8C14 8.34013 13.9717 8.67366 13.9173 8.99834L15.6782 10.701L14.1782 13.299L11.8223 12.6251C11.3107 13.0484 10.7276 13.3885 10.0939 13.6245L9.50001 16H6.50001L5.90614 13.6245C5.27242 13.3885 4.68934 13.0484 4.17768 12.6251L1.82181 13.299L0.321808 10.701L2.08269 8.99834C2.02831 8.67366 2.00001 8.34013 2.00001 8C2.00001 7.65987 2.02831 7.32634 2.08269 7.00166L0.321808 5.29904L1.82181 2.70096L4.17768 3.37488C4.68934 2.95155 5.27241 2.6115 5.90614 2.37548L6.50001 0ZM8.00001 10C9.10458 10 10 9.10457 10 8C10 6.89543 9.10458 6 8.00001 6C6.89544 6 6.00001 6.89543 6.00001 8C6.00001 9.10457 6.89544 10 8.00001 10Z"></path>
+                                </svg>
+                            </span>
+                        </span>
+                        <span class="label">Конфигурация</span>
+                    </a>
+                    <a href="#shortcuts" class="nav-link" data-page="shortcuts">
+                        <span class="icon-bubble">
+                            <span class="icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M4.125 5.25h6.502a1.5 1.5 0 011.06.44l2.248 2.26h5.94a1.5 1.5 0 011.5 1.5V17.5a1.5 1.5 0 01-1.5 1.5H4.125a1.5 1.5 0 01-1.5-1.5V6.75a1.5 1.5 0 011.5-1.5z"></path>
+                                    <path d="M2.625 9h18"></path>
+                                </svg>
+                            </span>
+                        </span>
+                        <span class="label">Команды</span>
+                    </a>
+                    <a href="#users" class="nav-link" data-page="users">
+                        <span class="icon-bubble">
+                            <span class="icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M9 22H15C20 22 22 20 22 15V9C22 4 20 2 15 2H9C4 2 2 4 2 9V15C2 20 4 22 9 22Z" path=""></path>
+                                    <path d="M7 8.25C8 9.25 9.63 9.25 10.64 8.25" path=""></path>
+                                    <path d="M13.36 8.25C14.36 9.25 15.99 9.25 17 8.25" path=""></path>
+                                    <path d="M8.4 13H15.6C16.1 13 16.5 13.4 16.5 13.9C16.5 16.39 14.49 18.4 12 18.4C9.51 18.4 7.5 16.39 7.5 13.9C7.5 13.4 7.9 13 8.4 13Z" path=""></path>
+                                </svg>
+                            </span>
+                        </span>
+                        <span class="label">Пользователи</span>
+                    </a>
+                </nav>
+                <div class="sidebar-footer">
+                    <a href="{{ url_for('logout') }}" class="nav-link" aria-label="Выйти из системы">
+                        <span class="icon-bubble">
+                            <span class="icon" aria-hidden="true">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-7.5a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 006 21h7.5a2.25 2.25 0 002.25-2.25V15"></path>
+                                    <path d="M21 12H9m12 0l-3-3m3 3l-3 3"></path>
+                                </svg>
+                            </span>
+                        </span>
+                        <span class="label">Выход</span>
+                    </a>
+                </div>
             </div>
+        </aside>
 
-            <div class="content-panel" id="config-panel">
-                <h1>Конфигурация бота</h1>
+        <main class="main-content" role="main">
+            <section class="content-panel active" id="dashboard-panel" aria-labelledby="dashboard-heading">
+                <h1 id="dashboard-heading">Панель управления</h1>
                 
-                <div class="card">
-                    <h3>Настройки Telegram Bot</h3>
-                    <form id="config-form">
+                <div class="status-cards">
+                    <article class="card">
+                        <h2>Статус бота</h2>
+                        <div class="status-indicator" id="bot-status">
+                            <span class="status-dot" aria-label="Индикатор состояния"></span>
+                            <span id="bot-status-text" class="status-text">Загрузка...</span>
+                        </div>
+                        <div class="bot-controls">
+                            <button id="btn-start-bot" class="btn btn-success" aria-label="Запустить бота">Запустить</button>
+                            <button id="btn-stop-bot" class="btn btn-danger" aria-label="Остановить бота" disabled>Остановить</button>
+                            <button id="btn-restart-bot" class="btn btn-warning" aria-label="Перезапустить бота">Перезапустить</button>
+                        </div>
+                    </article>
+
+                    <article class="card">
+                        <h2>Использование ресурсов</h2>
+                        <div class="resource-info">
+                            <div class="resource-item">
+                                <label for="cpu-progress" class="resource-label">CPU:</label>
+                                <div class="progress-bar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                    <div class="progress-fill" id="cpu-progress" style="width: 0%" role="progressbar" aria-label="Загрузка процессора"></div>
+                                </div>
+                                <span id="cpu-text" class="resource-value">0%</span>
+                            </div>
+                            <div class="resource-item">
+                                <label for="memory-progress" class="resource-label">Память:</label>
+                                <div class="progress-bar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                                    <div class="progress-fill" id="memory-progress" style="width: 0%" role="progressbar" aria-label="Использование памяти"></div>
+                                </div>
+                                <span id="memory-text" class="resource-value">0%</span>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="content-panel" id="config-panel" aria-labelledby="config-heading">
+                <h1 id="config-heading">Конфигурация бота</h1>
+                
+                <article class="card">
+                    <h2>Настройки Telegram Bot</h2>
+                    <form id="config-form" novalidate>
                         <div class="form-group">
                             <label for="bot-token">Telegram Bot Token:</label>
-                            <input type="text" id="bot-token" name="bot_token" placeholder="Введите токен бота">
-                            <small>Получите токен у @BotFather в Telegram</small>
+                            <input type="text" id="bot-token" name="bot_token" placeholder="Введите токен бота" autocomplete="off">
+                            <small class="form-hint">Получите токен у @BotFather в Telegram</small>
                         </div>
                         <div class="form-group">
                             <label for="command-timeout">Таймаут команды (секунды):</label>
                             <input type="number" id="command-timeout" name="command_timeout" value="30" min="1" max="300">
                         </div>
                         <div class="form-group">
-                            <label class="switch-label">
-                                <span>Автозапуск бота при старте приложения</span>
-                                <label class="switch">
+                            <div class="form-toggle">
+                                <span class="form-toggle-label">Автозапуск бота при старте приложения</span>
+                                <label class="form-toggle-control" aria-label="Переключатель автозапуска">
                                     <input type="checkbox" id="auto-start" name="auto_start">
-                                    <span class="slider"></span>
+                                    <span class="form-toggle-track">
+                                        <span class="form-toggle-thumb"></span>
+                                    </span>
                                 </label>
-                            </label>
+                            </div>
                         </div>
                         <button type="submit" class="btn btn-primary">Сохранить</button>
                     </form>
-                </div>
+                </article>
 
-                <div class="card">
-                    <h3>Настройки Web UI</h3>
-                    <form id="web-config-form">
+                <article class="card">
+                    <h2>Настройки Web UI</h2>
+                    <form id="web-config-form" novalidate>
                         <div class="form-group">
                             <label for="admin-username">Имя пользователя:</label>
                             <input type="text" id="admin-username" name="admin_username">
@@ -182,15 +172,15 @@
                         </div>
                         <button type="submit" class="btn btn-primary">Сохранить</button>
                     </form>
-                </div>
-            </div>
+                </article>
+            </section>
 
-            <div class="content-panel" id="shortcuts-panel">
-                <h1>Управление командами</h1>
+            <section class="content-panel" id="shortcuts-panel" aria-labelledby="shortcuts-heading">
+                <h1 id="shortcuts-heading">Управление командами</h1>
                 
-                <div class="card">
-                    <h3>Добавить команду</h3>
-                    <form id="shortcut-form">
+                <article class="card">
+                    <h2>Добавить команду</h2>
+                    <form id="shortcut-form" novalidate>
                         <div class="form-group">
                             <label for="shortcut-command">Команда (например, /open_spotify):</label>
                             <input type="text" id="shortcut-command" name="command" placeholder="/command_name" required>
@@ -198,7 +188,7 @@
                         <div class="form-group">
                             <label for="shortcut-display-name">Отображаемое имя (для бота):</label>
                             <input type="text" id="shortcut-display-name" name="display_name" placeholder="Spotify">
-                            <small>Это имя будет отображаться в боте вместо команды</small>
+                            <small class="form-hint">Это имя будет отображаться в боте вместо команды</small>
                         </div>
                         <div class="form-group">
                             <label for="shortcut-action">Действие:</label>
@@ -211,7 +201,7 @@
                         <div class="form-group">
                             <label for="shortcut-path">Путь к приложению/URL:</label>
                             <input type="text" id="shortcut-path" name="path" placeholder="C:\Path\To\App.exe или https://example.com" required>
-                            <small>Для ссылок укажите полный URL с http:// или https://</small>
+                            <small class="form-hint">Для ссылок укажите полный URL с http:// или https://</small>
                         </div>
                         <div class="form-group">
                             <label for="shortcut-args">Аргументы (через запятую, только для приложений):</label>
@@ -219,37 +209,37 @@
                         </div>
                         <button type="submit" class="btn btn-primary">Добавить команду</button>
                     </form>
-                </div>
+                </article>
 
-                <div class="card">
-                    <h3>Существующие команды</h3>
-                    <div id="shortcuts-list"></div>
-                </div>
-            </div>
+                <article class="card">
+                    <h2>Существующие команды</h2>
+                    <div id="shortcuts-list" class="list-container" role="list" aria-label="Список команд"></div>
+                </article>
+            </section>
 
-            <div class="content-panel" id="users-panel">
-                <h1>Управление пользователями</h1>
+            <section class="content-panel" id="users-panel" aria-labelledby="users-heading">
+                <h1 id="users-heading">Управление пользователями</h1>
                 
-                <div class="card">
-                    <h3>Добавить пользователя</h3>
-                    <form id="user-form">
+                <article class="card">
+                    <h2>Добавить пользователя</h2>
+                    <form id="user-form" novalidate>
                         <div class="form-group">
                             <label for="user-id">Telegram User ID:</label>
                             <input type="number" id="user-id" name="user_id" placeholder="123456789" required>
-                            <small>Получите свой ID у @userinfobot в Telegram</small>
+                            <small class="form-hint">Получите свой ID у @userinfobot в Telegram</small>
                         </div>
                         <button type="submit" class="btn btn-primary">Добавить пользователя</button>
                     </form>
-                </div>
+                </article>
 
-                <div class="card">
-                    <h3>Авторизованные пользователи</h3>
-                    <div id="users-list"></div>
-                </div>
-            </div>
+                <article class="card">
+                    <h2>Авторизованные пользователи</h2>
+                    <div id="users-list" class="list-container" role="list" aria-label="Список пользователей"></div>
+                </article>
+            </section>
         </main>
     </div>
 
-    <script src="{{ url_for('static', filename='js/dashboard.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/dashboard.js') }}" defer></script>
 </body>
 </html>

@@ -1,41 +1,136 @@
-// Animated background that reacts to mouse movement
-const animatedBg = document.getElementById('animatedBg');
-let mouseX = 0;
-let mouseY = 0;
-let targetX = 50;
-let targetY = 50;
-
-document.addEventListener('mousemove', (e) => {
-    mouseX = (e.clientX / window.innerWidth) * 100;
-    mouseY = (e.clientY / window.innerHeight) * 100;
+// PCUltra Dashboard - Core functionality
+document.addEventListener('DOMContentLoaded', () => {
+    // Initialize theme system
+    initThemeSystem();
+    
+    // Set up navigation
+    initNavigation();
+    
+    // Initialize bot controls
+    initBotControls();
+    
+    // Initialize forms
+    initForms();
+    
+    // Start status updates
+    startStatusMonitoring();
+    
+    // Initialize data loading
+    loadData();
+    
+    // Set up animated background
+    setupAnimatedBackground();
+    
+    console.log('PCUltra Dashboard fully initialized');
 });
 
-function animateBackground() {
-    targetX += (mouseX - targetX) * 0.05;
-    targetY += (mouseY - targetY) * 0.05;
+// Theme system
+let themeAnimationTimeout;
+const THEME_STORAGE_KEY = 'pcu-theme-preference';
+
+function initThemeSystem() {
+    const themeSwitch = document.getElementById('theme-switch');
+    if (!themeSwitch) return;
     
-    animatedBg.style.background = `
-        radial-gradient(circle at ${targetX}% ${targetY}%, rgba(139, 92, 246, 0.4) 0%, rgba(124, 58, 237, 0.2) 40%, transparent 70%),
-        radial-gradient(circle at ${100 - targetX}% ${100 - targetY}%, rgba(168, 85, 247, 0.3) 0%, transparent 60%)
-    `;
+    // Apply stored theme
+    let storedTheme = null;
+    try {
+        storedTheme = localStorage.getItem(THEME_STORAGE_KEY);
+    } catch (error) {
+        console.warn('Theme storage unavailable:', error);
+    }
     
-    requestAnimationFrame(animateBackground);
+    applyTheme(storedTheme === 'light' ? 'light' : 'dark', { silent: true });
+    
+    // Set up theme switch
+    themeSwitch.addEventListener('change', () => {
+        applyTheme(themeSwitch.checked ? 'light' : 'dark');
+    });
+    
+    // Set initial aria attributes
+    themeSwitch.setAttribute('aria-label', 'Переключить светлую и тёмную темы');
+    themeSwitch.setAttribute('aria-checked', themeSwitch.checked);
 }
 
-animateBackground();
+function applyTheme(theme, { silent = false } = {}) {
+    if (!document.body) return;
+    
+    const normalized = theme === 'light' ? 'light' : 'dark';
+    document.body.classList.remove('theme-dark', 'theme-light');
+    document.body.classList.add(`theme-${normalized}`);
+    document.body.setAttribute('data-theme', normalized);
+    
+    const themeSwitch = document.getElementById('theme-switch');
+    if (themeSwitch) {
+        themeSwitch.checked = normalized === 'light';
+        themeSwitch.setAttribute('aria-checked', normalized === 'light');
+    }
+    
+    // Save preference
+    try {
+        localStorage.setItem(THEME_STORAGE_KEY, normalized);
+    } catch (error) {
+        console.warn('Theme storage unavailable:', error);
+    }
+    
+    // Update glow colors
+    refreshGlowPalette();
+    
+    // Trigger ripple animation
+    if (!silent) {
+        triggerThemeRipple();
+    }
+}
 
-// Page navigation with panel system
-document.querySelectorAll('.nav-link[data-page]').forEach(link => {
-    link.addEventListener('click', (e) => {
-        e.preventDefault();
-        const page = link.getAttribute('data-page');
-        showPanel(page);
-        
-        // Update active state
-        document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
-        link.classList.add('active');
+function refreshGlowPalette() {
+    if (!document.body) return;
+    const styles = getComputedStyle(document.body);
+    const primary = styles.getPropertyValue('--bg-glow-1').trim();
+    const secondary = styles.getPropertyValue('--bg-glow-2').trim();
+    
+    if (primary && secondary) {
+        document.documentElement.style.setProperty('--current-bg-glow-1', primary);
+        document.documentElement.style.setProperty('--current-bg-glow-2', secondary);
+    }
+}
+
+function triggerThemeRipple() {
+    if (!document.body) return;
+    document.body.classList.add('theme-animating');
+    clearTimeout(themeAnimationTimeout);
+    themeAnimationTimeout = setTimeout(() => {
+        document.body.classList.remove('theme-animating');
+    }, 720);
+}
+
+// Navigation system
+function initNavigation() {
+    // Set up main navigation
+    document.querySelectorAll('.nav-link[data-page]').forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const page = link.getAttribute('data-page');
+            showPanel(page);
+            
+            // Update active state
+            document.querySelectorAll('.nav-link').forEach(l => {
+                l.classList.remove('active');
+                if (l.getAttribute('aria-current')) {
+                    l.removeAttribute('aria-current');
+                }
+            });
+            link.classList.add('active');
+            link.setAttribute('aria-current', 'page');
+            
+            // Close mobile menu if needed
+            closeMobileMenu();
+        });
     });
-});
+    
+    // Set initial active panel
+    const initialPanel = document.querySelector('.nav-link.active')?.getAttribute('data-page') || 'dashboard';
+    showPanel(initialPanel);
+}
 
 function showPanel(panelName) {
     // Hide all panels
@@ -49,350 +144,713 @@ function showPanel(panelName) {
         panel.classList.add('active');
     }
     
-    // Reload data when switching to shortcuts panel
+    // Update URL hash for history/navigation
+    window.history.replaceState(null, null, `#${panelName}`);
+    
+    // Special handling for data loading
     if (panelName === 'shortcuts') {
         loadShortcuts();
+    } else if (panelName === 'users') {
+        loadUsers();
     }
 }
 
-// Status update
+function closeMobileMenu() {
+    // Mobile-specific functionality would go here
+    const sidebar = document.querySelector('.sidebar');
+    if (sidebar && window.innerWidth <= 768) {
+        // Logic to close sidebar on mobile would go here
+    }
+}
+
+// Bot controls
 let statusInterval;
+let resourceInterval;
+
+function initBotControls() {
+    const startBtn = document.getElementById('btn-start-bot');
+    const stopBtn = document.getElementById('btn-stop-bot');
+    const restartBtn = document.getElementById('btn-restart-bot');
+    
+    if (startBtn) {
+        startBtn.addEventListener('click', handleBotStart);
+    }
+    
+    if (stopBtn) {
+        stopBtn.addEventListener('click', handleBotStop);
+    }
+    
+    if (restartBtn) {
+        restartBtn.addEventListener('click', handleBotRestart);
+    }
+}
+
+async function handleBotStart() {
+    if (!confirm('Запустить бота?')) return;
+    
+    try {
+        showLoadingState('btn-start-bot', true);
+        const response = await fetch('/api/bot/start', { 
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showNotification('success', 'Бот успешно запущен');
+            await updateStatus();
+        } else {
+            showNotification('error', `Ошибка: ${data.error || 'Неизвестная ошибка'}`);
+        }
+    } catch (error) {
+        console.error('Start bot error:', error);
+        showNotification('error', 'Ошибка подключения к серверу');
+    } finally {
+        showLoadingState('btn-start-bot', false);
+    }
+}
+
+async function handleBotStop() {
+    if (!confirm('Остановить бота?')) return;
+    
+    try {
+        showLoadingState('btn-stop-bot', true);
+        const response = await fetch('/api/bot/stop', { 
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showNotification('success', 'Бот успешно остановлен');
+            await updateStatus();
+        } else {
+            showNotification('error', `Ошибка: ${data.error || 'Неизвестная ошибка'}`);
+        }
+    } catch (error) {
+        console.error('Stop bot error:', error);
+        showNotification('error', 'Ошибка подключения к серверу');
+    } finally {
+        showLoadingState('btn-stop-bot', false);
+    }
+}
+
+async function handleBotRestart() {
+    if (!confirm('Перезапустить бота?')) return;
+    
+    try {
+        showLoadingState('btn-restart-bot', true);
+        const response = await fetch('/api/bot/restart', { 
+            method: 'POST',
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            showNotification('success', 'Бот успешно перезапущен');
+            await updateStatus();
+        } else {
+            showNotification('error', `Ошибка: ${data.error || 'Неизвестная ошибка'}`);
+        }
+    } catch (error) {
+        console.error('Restart bot error:', error);
+        showNotification('error', 'Ошибка подключения к серверу');
+    } finally {
+        showLoadingState('btn-restart-bot', false);
+    }
+}
+
+// Status monitoring
+function startStatusMonitoring() {
+    // Initial update
+    updateStatus();
+    
+    // Set up interval (5 seconds is enough for both status and resources)
+    statusInterval = setInterval(updateStatus, 1000);
+    
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+        if (statusInterval) clearInterval(statusInterval);
+    });
+}
 
 async function updateStatus() {
     try {
-        const response = await fetch('/api/status');
+        const response = await fetch('/api/status', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const data = await response.json();
         
         // Update bot status
-        const botStatus = document.getElementById('bot-status-text');
-        const statusDot = document.querySelector('.status-dot');
-        const btnStart = document.getElementById('btn-start-bot');
-        const btnStop = document.getElementById('btn-stop-bot');
-        
-        if (data.bot.running) {
-            botStatus.textContent = 'Запущен';
-            statusDot.classList.add('running');
-            statusDot.classList.remove('stopped');
-            btnStart.disabled = true;
-            btnStop.disabled = false;
-        } else {
-            botStatus.textContent = 'Остановлен';
-            statusDot.classList.add('stopped');
-            statusDot.classList.remove('running');
-            btnStart.disabled = false;
-            btnStop.disabled = true;
+        if (data.bot && data.bot.running !== undefined) {
+            updateBotStatusUI(data.bot.running);
         }
         
-        // Update system resources
-        document.getElementById('cpu-text').textContent = `${data.system.cpu.toFixed(1)}%`;
-        document.getElementById('cpu-progress').style.width = `${data.system.cpu}%`;
-        
-        const memoryPercent = data.system.memory.percent;
-        document.getElementById('memory-text').textContent = `${memoryPercent.toFixed(1)}%`;
-        document.getElementById('memory-progress').style.width = `${memoryPercent}%`;
+        // Update system resources - ИСПРАВЛЕНО: данные ресурсов в том же ответе
+        if (data.system && data.system.cpu !== undefined && data.system.memory && data.system.memory.percent !== undefined) {
+            updateResourceUI(data.system.cpu, data.system.memory.percent);
+        }
     } catch (error) {
         console.error('Status update error:', error);
     }
 }
 
-// Bot controls
-document.getElementById('btn-start-bot').addEventListener('click', async () => {
-    if (confirm('Запустить бота?')) {
+function updateBotStatusUI(isRunning) {
+    const statusDot = document.querySelector('.status-dot');
+    const statusText = document.getElementById('bot-status-text');
+    const startBtn = document.getElementById('btn-start-bot');
+    const stopBtn = document.getElementById('btn-stop-bot');
+    
+    if (!statusDot || !statusText || !startBtn || !stopBtn) return;
+    
+    if (isRunning) {
+        statusText.textContent = 'Запущен';
+        statusDot.classList.add('running');
+        statusDot.classList.remove('stopped');
+        startBtn.disabled = true;
+        stopBtn.disabled = false;
+    } else {
+        statusText.textContent = 'Остановлен';
+        statusDot.classList.add('stopped');
+        statusDot.classList.remove('running');
+        startBtn.disabled = false;
+        stopBtn.disabled = true;
+    }
+}
+
+function updateResourceUI(cpuPercent, memoryPercent) {
+    const cpuProgress = document.getElementById('cpu-progress');
+    const cpuText = document.getElementById('cpu-text');
+    const memoryProgress = document.getElementById('memory-progress');
+    const memoryText = document.getElementById('memory-text');
+    
+    if (cpuProgress) cpuProgress.style.width = `${Math.min(100, Math.max(0, cpuPercent))}%`;
+    if (cpuText) cpuText.textContent = `${cpuPercent.toFixed(1)}%`;
+    if (memoryProgress) memoryProgress.style.width = `${Math.min(100, Math.max(0, memoryPercent))}%`;
+    if (memoryText) memoryText.textContent = `${memoryPercent.toFixed(1)}%`;
+}
+
+// Form handling
+function initForms() {
+    // Config forms
+    setupForm('config-form', '/api/config', loadConfig);
+    setupForm('web-config-form', '/api/config', null, () => {
+        document.getElementById('admin-password').value = '';
+    });
+    
+    // Shortcuts form
+    setupForm('shortcut-form', '/api/shortcuts', loadShortcuts);
+    
+    // Users form
+    setupForm('user-form', '/api/users', loadUsers);
+}
+
+function setupForm(formId, endpoint, onSuccessCallback, onFinallyCallback) {
+    const form = document.getElementById(formId);
+    if (!form) return;
+    
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        
+        if (form.classList.contains('submitting')) return;
+        
         try {
-            const response = await fetch('/api/bot/start', { method: 'POST' });
+            form.classList.add('submitting');
+            const submitButton = form.querySelector('button[type="submit"]');
+            const originalText = submitButton.textContent;
+            submitButton.disabled = true;
+            submitButton.textContent = 'Сохранение...';
+            
+            // Get form data
+            const formData = getFormData(form);
+            
+            // Submit to API
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: JSON.stringify(formData)
+            });
+            
             const data = await response.json();
+            
             if (data.success) {
-                alert('Бот запущен');
-                updateStatus();
+                showNotification('success', 'Данные успешно сохранены');
+                if (typeof onSuccessCallback === 'function') {
+                    onSuccessCallback();
+                }
             } else {
-                alert(`Ошибка: ${data.error}`);
+                showNotification('error', `Ошибка: ${data.error || 'Неизвестная ошибка'}`);
             }
         } catch (error) {
-            alert('Ошибка подключения к серверу');
-        }
-    }
-});
-
-document.getElementById('btn-stop-bot').addEventListener('click', async () => {
-    if (confirm('Остановить бота?')) {
-        try {
-            const response = await fetch('/api/bot/stop', { method: 'POST' });
-            const data = await response.json();
-            if (data.success) {
-                alert('Бот остановлен');
-                updateStatus();
-            } else {
-                alert(`Ошибка: ${data.error}`);
+            console.error('Form submit error:', error);
+            showNotification('error', 'Ошибка подключения к серверу');
+        } finally {
+            form.classList.remove('submitting');
+            const submitButton = form.querySelector('button[type="submit"]');
+            if (submitButton) {
+                submitButton.disabled = false;
+                submitButton.textContent = submitButton.dataset.originalText || submitButton.textContent;
             }
-        } catch (error) {
-            alert('Ошибка подключения к серверу');
-        }
-    }
-});
-
-document.getElementById('btn-restart-bot').addEventListener('click', async () => {
-    if (confirm('Перезапустить бота?')) {
-        try {
-            const response = await fetch('/api/bot/restart', { method: 'POST' });
-            const data = await response.json();
-            if (data.success) {
-                alert('Бот перезапущен');
-                updateStatus();
-            } else {
-                alert(`Ошибка: ${data.error}`);
+            
+            if (typeof onFinallyCallback === 'function') {
+                onFinallyCallback();
             }
-        } catch (error) {
-            alert('Ошибка подключения к серверу');
         }
-    }
-});
+    });
+}
 
-// Load configuration
+function getFormData(form) {
+    const formData = {};
+    const inputs = form.querySelectorAll('input, select, textarea');
+    
+    inputs.forEach(input => {
+        let value;
+        if (input.type === 'checkbox') {
+            value = input.checked;
+        } else if (input.type === 'number') {
+            value = input.value ? parseFloat(input.value) : null;
+        } else {
+            value = input.value.trim();
+        }
+        
+        if (input.name) {
+            formData[input.name] = value;
+        }
+    });
+    
+    return formData;
+}
+
+// Data loading
+async function loadData() {
+    try {
+        await Promise.all([
+            loadConfig(),
+            loadShortcuts(),
+            loadUsers()
+        ]);
+    } catch (error) {
+        console.error('Initial data load error:', error);
+    }
+}
+
+// Config loading
 async function loadConfig() {
     try {
-        const response = await fetch('/api/config');
+        const response = await fetch('/api/config', {
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        });
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
         const config = await response.json();
         
-        document.getElementById('bot-token').value = config.bot.token || '';
-        document.getElementById('command-timeout').value = config.bot.command_timeout || 30;
-        document.getElementById('auto-start').checked = config.bot.auto_start || false;
-        document.getElementById('admin-username').value = config.web.admin_username || 'admin';
+        // Update UI with config values
+        if (config.bot) {
+            if (config.bot.token) document.getElementById('bot-token').value = config.bot.token;
+            if (config.bot.command_timeout !== undefined) document.getElementById('command-timeout').value = config.bot.command_timeout;
+            if (config.bot.auto_start !== undefined) document.getElementById('auto-start').checked = config.bot.auto_start;
+        }
+        
+        if (config.web && config.web.admin_username) {
+            document.getElementById('admin-username').value = config.web.admin_username;
+        }
     } catch (error) {
         console.error('Config load error:', error);
     }
 }
 
-// Save bot configuration
-document.getElementById('config-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
+// Shortcuts loading and management
+function loadShortcuts() {
+    const listContainer = document.getElementById('shortcuts-list');
+    if (!listContainer) return;
     
-    const updates = {
-        bot: {
-            token: document.getElementById('bot-token').value,
-            command_timeout: parseInt(document.getElementById('command-timeout').value),
-            auto_start: document.getElementById('auto-start').checked
-        }
-    };
+    // Show loading state
+    listContainer.innerHTML = '<div class="loading-spinner"></div>';
     
-    try {
-        const response = await fetch('/api/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updates)
-        });
-        
-        const data = await response.json();
-        if (data.success) {
-            alert('Конфигурация сохранена');
-        } else {
-            alert(`Ошибка: ${data.error}`);
+    fetch('/api/shortcuts', {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
         }
-    } catch (error) {
-        alert('Ошибка подключения к серверу');
-    }
-});
-
-// Save web configuration
-document.getElementById('web-config-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const updates = {
-        web: {
-            admin_username: document.getElementById('admin-username').value,
-            admin_password: document.getElementById('admin-password').value
-        }
-    };
-    
-    try {
-        const response = await fetch('/api/config', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updates)
-        });
-        
-        const data = await response.json();
-        if (data.success) {
-            alert('Конфигурация Web UI сохранена');
-            document.getElementById('admin-password').value = '';
-        } else {
-            alert(`Ошибка: ${data.error}`);
-        }
-    } catch (error) {
-        alert('Ошибка подключения к серверу');
-    }
-});
-
-// Load shortcuts
-async function loadShortcuts() {
-    try {
-        console.log('Loading shortcuts...');
-        const response = await fetch('/api/shortcuts');
-        const shortcuts = await response.json();
-        console.log('Shortcuts loaded:', shortcuts);
-        
-        const list = document.getElementById('shortcuts-list');
-        list.innerHTML = '';
-        
-        const shortcutEntries = Object.entries(shortcuts);
-        
-        if (shortcutEntries.length === 0) {
-            list.innerHTML = '<p style="color: #c4b5fd; text-align: center; padding: 20px;">Нет настроенных команд</p>';
-            return;
-        }
-        
-        for (const [id, shortcut] of shortcutEntries) {
-            const item = document.createElement('div');
-            item.className = 'shortcut-item';
-            item.innerHTML = `
-                <div class="info">
-                    <div class="command">${shortcut.command}</div>
-                    <div class="path">${shortcut.path}</div>
-                </div>
-                <button class="btn btn-danger btn-small" onclick="deleteShortcut('${id}')">Удалить</button>
-            `;
-            list.appendChild(item);
-        }
-    } catch (error) {
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return response.json();
+    })
+    .then(shortcuts => {
+        renderShortcuts(shortcuts, listContainer);
+    })
+    .catch(error => {
         console.error('Shortcuts load error:', error);
-        const list = document.getElementById('shortcuts-list');
-        list.innerHTML = '<p style="color: #ef4444; text-align: center; padding: 20px;">Ошибка загрузки команд</p>';
-    }
+        listContainer.innerHTML = `
+            <div class="error-state">
+                <p class="error-message">Ошибка загрузки команд</p>
+                <button class="btn btn-small btn-primary" onclick="loadShortcuts()">Повторить</button>
+            </div>
+        `;
+    });
 }
 
-// Add shortcut
-document.getElementById('shortcut-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
+function renderShortcuts(shortcuts, container) {
+    if (!container) return;
     
-    const formData = {
-        command: document.getElementById('shortcut-command').value,
-        display_name: document.getElementById('shortcut-display-name').value || document.getElementById('shortcut-command').value,
-        action: document.getElementById('shortcut-action').value,
-        path: document.getElementById('shortcut-path').value,
-        args: document.getElementById('shortcut-args').value.split(',').map(s => s.trim()).filter(s => s)
-    };
+    const shortcutEntries = Object.entries(shortcuts || {});
     
-    try {
-        const response = await fetch('/api/shortcuts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(formData)
-        });
+    if (shortcutEntries.length === 0) {
+        container.innerHTML = '<p class="empty-state">Нет настроенных команд</p>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    shortcutEntries.forEach(([id, shortcut]) => {
+        const item = document.createElement('div');
+        item.className = 'shortcut-item';
+        item.dataset.id = id;
         
-        const data = await response.json();
+        // Determine display name - use explicit display_name if available, else extract from command
+        const displayName = shortcut.display_name || 
+                           (shortcut.command.startsWith('/') ? shortcut.command.substring(1) : shortcut.command);
+        
+        item.innerHTML = `
+            <div class="info">
+                <div class="command">${escapeHtml(displayName)}</div>
+                <div class="path">${escapeHtml(shortcut.path)}</div>
+                <div class="action-type">
+                    <span class="action-badge ${getActionBadgeClass(shortcut.action)}">
+                        ${getActionDisplayName(shortcut.action)}
+                    </span>
+                </div>
+            </div>
+            <button class="btn btn-danger btn-small delete-shortcut" data-id="${escapeHtml(id)}" aria-label="Удалить команду ${escapeHtml(displayName)}">
+                Удалить
+            </button>
+        `;
+        
+        container.appendChild(item);
+    });
+    
+    // Add event listeners
+    container.querySelectorAll('.delete-shortcut').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const id = e.currentTarget.dataset.id;
+            deleteShortcut(id);
+        });
+    });
+}
+
+function getActionDisplayName(action) {
+    const actions = {
+        'launch_app': 'Приложение',
+        'open_url': 'Ссылка',
+        'execute_script': 'Скрипт'
+    };
+    return actions[action] || action;
+}
+
+function getActionBadgeClass(action) {
+    const classes = {
+        'launch_app': 'badge-app',
+        'open_url': 'badge-url',
+        'execute_script': 'badge-script'
+    };
+    return classes[action] || '';
+}
+
+// Users loading and management
+function loadUsers() {
+    const listContainer = document.getElementById('users-list');
+    if (!listContainer) return;
+    
+    // Show loading state
+    listContainer.innerHTML = '<div class="loading-spinner"></div>';
+    
+    fetch('/api/users', {
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return response.json();
+    })
+    .then(users => {
+        renderUsers(users || [], listContainer);
+    })
+    .catch(error => {
+        console.error('Users load error:', error);
+        listContainer.innerHTML = `
+            <div class="error-state">
+                <p class="error-message">Ошибка загрузки пользователей</p>
+                <button class="btn btn-small btn-primary" onclick="loadUsers()">Повторить</button>
+            </div>
+        `;
+    });
+}
+
+function renderUsers(users, container) {
+    if (!container) return;
+    
+    if (users.length === 0) {
+        container.innerHTML = '<p class="empty-state">Нет авторизованных пользователей</p>';
+        return;
+    }
+    
+    container.innerHTML = '';
+    
+    users.forEach(userId => {
+        const item = document.createElement('div');
+        item.className = 'user-item';
+        item.dataset.id = userId;
+        
+        item.innerHTML = `
+            <div class="info">
+                <div class="user-id">ID: ${escapeHtml(userId.toString())}</div>
+            </div>
+            <button class="btn btn-danger btn-small delete-user" data-id="${escapeHtml(userId.toString())}" aria-label="Удалить пользователя ${escapeHtml(userId.toString())}">
+                Удалить
+            </button>
+        `;
+        
+        container.appendChild(item);
+    });
+    
+    // Add event listeners
+    container.querySelectorAll('.delete-user').forEach(button => {
+        button.addEventListener('click', (e) => {
+            const id = e.currentTarget.dataset.id;
+            deleteUser(id);
+        });
+    });
+}
+
+// Delete functions
+function deleteShortcut(id) {
+    if (!id || !confirm(`Удалить команду "${id}"?`)) return;
+    
+    fetch(`/api/shortcuts/${encodeURIComponent(id)}`, { 
+        method: 'DELETE',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
+        }
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return response.json();
+    })
+    .then(data => {
         if (data.success) {
-            alert('Команда добавлена');
-            document.getElementById('shortcut-form').reset();
+            showNotification('success', 'Команда успешно удалена');
             loadShortcuts();
         } else {
-            alert(`Ошибка: ${data.error}`);
+            throw new Error(data.error || 'Неизвестная ошибка');
         }
-    } catch (error) {
-        alert('Ошибка подключения к серверу');
-    }
-});
+    })
+    .catch(error => {
+        console.error('Delete shortcut error:', error);
+        showNotification('error', `Ошибка: ${error.message || 'Не удалось удалить команду'}`);
+    });
+}
 
-// Delete shortcut
-window.deleteShortcut = async (id) => {
-    if (confirm(`Удалить команду "${id}"?`)) {
-        try {
-            console.log('Deleting shortcut:', id);
-            const response = await fetch(`/api/shortcuts/${encodeURIComponent(id)}`, { 
-                method: 'DELETE' 
-            });
-            
-            const data = await response.json();
-            console.log('Delete response:', data);
-            
-            if (data.success) {
-                console.log('Shortcut deleted successfully, reloading list...');
-                await loadShortcuts();
-                alert('Команда удалена успешно!');
-            } else {
-                alert(`Ошибка: ${data.error}`);
-            }
-        } catch (error) {
-            console.error('Delete error:', error);
-            alert('Ошибка подключения к серверу');
+function deleteUser(id) {
+    if (!id || !confirm(`Удалить пользователя с ID "${id}"?`)) return;
+    
+    fetch(`/api/users/${encodeURIComponent(id)}`, { 
+        method: 'DELETE',
+        headers: {
+            'X-Requested-With': 'XMLHttpRequest'
         }
-    }
-};
+    })
+    .then(response => {
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            showNotification('success', 'Пользователь успешно удален');
+            loadUsers();
+        } else {
+            throw new Error(data.error || 'Неизвестная ошибка');
+        }
+    })
+    .catch(error => {
+        console.error('Delete user error:', error);
+        showNotification('error', `Ошибка: ${error.message || 'Не удалось удалить пользователя'}`);
+    });
+}
 
-// Load users
-async function loadUsers() {
-    try {
-        const response = await fetch('/api/users');
-        const users = await response.json();
+// Animated background
+let mouseX = 0;
+let mouseY = 0;
+let targetX = 50;
+let targetY = 50;
+let animationFrameId = null;
+
+function setupAnimatedBackground() {
+    const animatedBg = document.getElementById('animatedBg');
+    if (!animatedBg) return;
+    
+    // Mouse tracking
+    document.addEventListener('mousemove', (e) => {
+        mouseX = (e.clientX / window.innerWidth) * 100;
+        mouseY = (e.clientY / window.innerHeight) * 100;
+    });
+    
+    // Start animation
+    animateBackground();
+    
+    // Handle window resize
+    window.addEventListener('resize', () => {
+        cancelAnimationFrame(animationFrameId);
+        animateBackground();
+    });
+    
+    // Clean up on page unload
+    window.addEventListener('beforeunload', () => {
+        cancelAnimationFrame(animationFrameId);
+    });
+}
+
+function animateBackground() {
+    targetX += (mouseX - targetX) * 0.05;
+    targetY += (mouseY - targetY) * 0.05;
+    
+    const animatedBg = document.getElementById('animatedBg');
+    if (animatedBg) {
+        const styles = getComputedStyle(document.body);
+        const primaryGlow = styles.getPropertyValue('--bg-glow-1').trim() || 'rgba(139, 92, 246, 0.4)';
+        const secondaryGlow = styles.getPropertyValue('--bg-glow-2').trim() || 'rgba(124, 58, 237, 0.2)';
         
-        const list = document.getElementById('users-list');
-        list.innerHTML = '';
-        
-        if (users.length === 0) {
-            list.innerHTML = '<p style="color: #c4b5fd; text-align: center; padding: 20px;">Нет авторизованных пользователей</p>';
-            return;
+        animatedBg.style.background = `
+            radial-gradient(circle at ${targetX.toFixed(1)}% ${targetY.toFixed(1)}%, ${primaryGlow} 0%, transparent 70%),
+            radial-gradient(circle at ${100 - targetX.toFixed(1)}% ${100 - targetY.toFixed(1)}%, ${secondaryGlow} 0%, transparent 60%)
+        `;
+    }
+    
+    animationFrameId = requestAnimationFrame(animateBackground);
+}
+
+// Utility functions
+function showLoadingState(elementId, isLoading) {
+    const element = document.getElementById(elementId);
+    if (!element) return;
+    
+    if (isLoading) {
+        element.disabled = true;
+        element.dataset.originalText = element.textContent;
+        element.textContent = 'Загрузка...';
+        element.classList.add('loading');
+    } else {
+        element.disabled = false;
+        if (element.dataset.originalText) {
+            element.textContent = element.dataset.originalText;
+            delete element.dataset.originalText;
         }
-        
-        users.forEach(userId => {
-            const item = document.createElement('div');
-            item.className = 'user-item';
-            item.innerHTML = `
-                <div class="info">User ID: ${userId}</div>
-                <button class="btn btn-danger btn-small" onclick="deleteUser(${userId})">Удалить</button>
-            `;
-            list.appendChild(item);
-        });
-    } catch (error) {
-        console.error('Users load error:', error);
+        element.classList.remove('loading');
     }
 }
 
-// Add user
-document.getElementById('user-form').addEventListener('submit', async (e) => {
-    e.preventDefault();
+function showNotification(type, message) {
+    // Create or update notification
+    let notification = document.querySelector('.global-notification');
     
-    const userId = parseInt(document.getElementById('user-id').value);
+    if (!notification) {
+        notification = document.createElement('div');
+        notification.className = 'global-notification';
+        notification.style.position = 'fixed';
+        notification.style.top = '20px';
+        notification.style.right = '20px';
+        notification.style.padding = '15px 25px';
+        notification.style.borderRadius = '12px';
+        notification.style.color = 'white';
+        notification.style.fontWeight = '500';
+        notification.style.boxShadow = '0 4px 15px rgba(0,0,0,0.2)';
+        notification.style.zIndex = '10000';
+        notification.style.transform = 'translateX(400px)';
+        notification.style.opacity = '0';
+        notification.style.transition = 'transform 0.3s ease, opacity 0.3s ease';
+        document.body.appendChild(notification);
+    }
     
-    try {
-        const response = await fetch('/api/users', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user_id: userId })
-        });
+    // Set styles based on type
+    const styles = {
+        success: {
+            background: 'linear-gradient(135deg, #10b981, #34d399)',
+            icon: '✓'
+        },
+        error: {
+            background: 'linear-gradient(135deg, #ef4444, #f87171)',
+            icon: '!'
+        },
+        info: {
+            background: 'linear-gradient(135deg, #3b82f6, #60a5fa)',
+            icon: 'i'
+        }
+    };
+    
+    const style = styles[type] || styles.info;
+    notification.style.background = style.background;
+    
+    // Update content
+    notification.innerHTML = `<span style="margin-right: 8px">${style.icon}</span>${escapeHtml(message)}`;
+    
+    // Show notification
+    requestAnimationFrame(() => {
+        notification.style.transform = 'translateX(0)';
+        notification.style.opacity = '1';
         
-        const data = await response.json();
-        if (data.success) {
-            alert('Пользователь добавлен');
-            document.getElementById('user-form').reset();
-            loadUsers();
-        } else {
-            alert(`Ошибка: ${data.error}`);
-        }
-    } catch (error) {
-        alert('Ошибка подключения к серверу');
-    }
-});
+        // Auto hide after 5 seconds
+        setTimeout(() => {
+            notification.style.transform = 'translateX(400px)';
+            notification.style.opacity = '0';
+            
+            setTimeout(() => {
+                if (notification.parentNode) {
+                    notification.parentNode.removeChild(notification);
+                }
+            }, 300);
+        }, 5000);
+    });
+}
 
-// Delete user
-window.deleteUser = async (userId) => {
-    if (confirm('Удалить пользователя?')) {
-        try {
-            const response = await fetch(`/api/users/${userId}`, { method: 'DELETE' });
-            const data = await response.json();
-            if (data.success) {
-                loadUsers();
-            } else {
-                alert(`Ошибка: ${data.error}`);
-            }
-        } catch (error) {
-            alert('Ошибка подключения к серверу');
-        }
-    }
-};
+function escapeHtml(unsafe) {
+    if (typeof unsafe !== 'string') return unsafe;
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "<")
+        .replace(/>/g, ">")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
 
-// Initialize
-document.addEventListener('DOMContentLoaded', () => {
-    updateStatus();
-    statusInterval = setInterval(updateStatus, 2000);
-    loadConfig();
-    loadShortcuts();
-    loadUsers();
-});
+// Initialize when DOM is ready
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initDashboard);
+} else {
+    initDashboard();
+}
+
+function initDashboard() {
+    console.log('PCUltra Dashboard initializing...');
+    // Main initialization will happen through the DOMContentLoaded event listener
+}

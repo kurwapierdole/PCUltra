@@ -3,37 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Регистрация администратора для системы управления PCUltra">
     <title>PCUltra - Регистрация</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/login.css') }}">
+    <link rel="icon" href="{{ url_for('static', filename='img/favicon.ico') }}" type="image/x-icon">
 </head>
 <body>
     <div class="login-container">
-        <div class="login-box">
+        <div class="login-box" role="region" aria-labelledby="register-title">
             <div class="brand">
-                <div class="brand-badge">PC</div>
+                <div class="brand-badge" aria-label="Логотип PCUltra">PC</div>
             </div>
-            <h1>PCUltra</h1>
+            <h1 id="register-title">PCUltra</h1>
             <h2>Регистрация администратора</h2>
             <p class="info-text">Создайте учетную запись администратора для первого входа в систему</p>
-            <form id="registerForm">
+            <form id="registerForm" novalidate>
                 <div class="form-group">
                     <label for="username">Имя пользователя:</label>
-                    <input type="text" id="username" name="username" required autofocus>
+                    <input type="text" id="username" name="username" required autofocus autocomplete="username">
                 </div>
                 <div class="form-group">
                     <label for="password">Пароль:</label>
-                    <input type="password" id="password" name="password" required minlength="6">
-                    <small>Минимум 6 символов</small>
+                    <input type="password" id="password" name="password" required minlength="6" autocomplete="new-password">
+                    <small class="form-hint">Минимум 6 символов</small>
                 </div>
                 <div class="form-group">
                     <label for="confirm_password">Подтвердите пароль:</label>
-                    <input type="password" id="confirm_password" name="confirm_password" required minlength="6">
+                    <input type="password" id="confirm_password" name="confirm_password" required minlength="6" autocomplete="new-password">
                 </div>
-                <button type="submit" class="btn-primary">Зарегистрироваться</button>
-                <div id="error" class="error-message"></div>
+                <button type="submit" class="btn-primary" aria-label="Зарегистрироваться">Зарегистрироваться</button>
+                <div id="error" class="error-message" role="alert" aria-live="polite"></div>
             </form>
         </div>
     </div>
-    <script src="{{ url_for('static', filename='js/register.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/register.js') }}" defer></script>
 </body>
 </html>
