@@ -8,12 +8,14 @@ import logging
 import pyautogui
 import os
 import psutil
+import random
 from pathlib import Path
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, 
     filters, ContextTypes, ConversationHandler
 )
+from telegram.error import NetworkError
 import threading
 import time
 from pc_controller import PCController, get_playwright_executor
@@ -29,9 +31,26 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 # ---------------------------------
 
+STARTUP_STICKERS = [
+    "CAACAgIAAxkBAAET2Q5pFHD_5xZv8mnxqej9falWgQj2ggACnnIAAr92gEgfMjWevr9zrzYE",
+    "CAACAgIAAxkBAAET2RRpFHFG171OPjaE0ma6CUe4aGmnBAACd3YAAv8XiEgJQPJvbu_L7zYE",
+    "CAACAgIAAxkBAAET2RZpFHFRelwYb0c_JFyKURU2Hff_WQAC6XcAAqTmkEifodyHopOIcDYE",
+    "CAACAgIAAxkBAAET2RhpFHF8q8NKxGYnAAFNB4wZLqoPsZoAAiSBAAJBWIFICwPEOS2Zuq42BA",
+    "CAACAgIAAxkBAAET2RxpFHHAeAtE4XZ_AAGUPzw6YFnpwSIAAox_AAJ-g4BIs7WmlQsj_Y02BA",
+    "CAACAgIAAxkBAAET2WBpFHlZH08t_PIRzmCmbdE8lvClvQACKHYAAthgAUqnfWkqSaVHUDYE",
+    "CAACAgIAAxkBAAET2WJpFHnyp5QUdMIEcJnNcFPclZDPDAACwwsAAmVDCUqaTwsWu25dXTYE",
+    "CAACAgIAAxkBAAET2WZpFHpj4yqVG8DuSt_KuYz1_9UK7QAChFoAAsCTuEootiU-cwkZUzYE",
+    "CAACAgIAAxkBAAET2W1pFHqepVb1LEYTQYl9RrMPBnUEIAAClSAAAscpOEl1gPu0KxVaJzYE",
+    "CAACAgQAAxkBAAET2XNpFHsPrMIEHaTK1l4YD_aEN_FjywACqw4AArDFqVG3QYOblz3FrjYE",
+    "CAACAgIAAxkBAAET2XhpFHtuJE0pyL1r_Ttwq5ZPPMln9gACNGUAAheksEo_6_MP2_ueNzYE",
+    "CAACAgIAAxkBAAET2YJpFHu3n6bkwSCvJe5WuhhJsHU4ZQACPlQAAqAPUUilXHeFEkyTQzYE",
+    "CAACAgIAAxkBAAET2YZpFHv2VCDohqIkDjdywKca0S-cYwAChGAAAopNUEgoFpz2fWXijTYE",
+    "CAACAgIAAxkBAAET2YhpFHwKHjH-mv9LVnIV_lrB0kwRpAACSloAAn-tUEhw8kHMPUJ_UzYE",
+]
+
 
 # Conversation states
-WAITING_TEXT, WAITING_FOLDER, WAITING_NOTIFY, WAITING_URL = range(4)
+WAITING_TEXT, WAITING_FOLDER, WAITING_NOTIFY, WAITING_URL, WAITING_SHUTDOWN_TIMER = range(5)
 
 class BotAgent:
     """Telegram bot agent for remote PC control"""
@@ -44,6 +63,8 @@ class BotAgent:
         self.event_loop = None
         self.thread = None
         self.mouse_step = 50  # Pixels to move mouse per button press
+        self.startup_sticker_sent = False
+        self.bot_id = None
     
     def is_running(self):
         """Check if bot is running"""
@@ -77,16 +98,8 @@ class BotAgent:
         
         if self.application and self.event_loop:
             try:
-                # Stop polling
                 future = asyncio.run_coroutine_threadsafe(
-                    self.application.stop(),
-                    self.event_loop
-                )
-                future.result(timeout=5)
-                
-                # Shutdown application
-                future = asyncio.run_coroutine_threadsafe(
-                    self.application.shutdown(),
+                    self._graceful_shutdown(),
                     self.event_loop
                 )
                 future.result(timeout=5)
@@ -95,6 +108,10 @@ class BotAgent:
                 
         if self.thread:
             self.thread.join(timeout=10)
+            self.thread = None
+        
+        self.application = None
+        self.event_loop = None
             
         logger.info("Bot stopped")
     
@@ -110,7 +127,12 @@ class BotAgent:
         token = config['bot'].get('token', '')
         
         # Create application
-        self.application = Application.builder().token(token).build()
+        self.application = (
+            Application.builder()
+            .token(token)
+            .post_init(self._post_init_callback)
+            .build()
+        )
         
         # Register handlers
         self._register_handlers()
@@ -129,6 +151,78 @@ class BotAgent:
             self.running = False
             logger.info("Bot polling stopped")
     
+    async def _post_init_callback(self, application: Application):
+        """Callback executed after application initialization"""
+        try:
+            application.job_queue.run_once(self._startup_job, when=0)
+        except Exception as e:
+            logger.error(f"Не удалось запланировать стартовую задачу: {e}")
+    
+    async def _graceful_shutdown(self):
+        """Остановить application аккуратно внутри его же цикла"""
+        if not self.application:
+            return
+        try:
+            await self.application.stop()
+            # Даем сетевому циклу завершить текущие запросы
+            await asyncio.sleep(0.1)
+            await self.application.shutdown()
+        except Exception as e:
+            logger.error(f"Error during graceful shutdown: {e}")
+
+    async def _startup_job(self, context: ContextTypes.DEFAULT_TYPE):
+        """Job queue task executed right after application start"""
+        bot = context.bot
+        try:
+            me = await bot.get_me()
+            self.bot_id = me.id
+        except Exception as e:
+            logger.warning(f"Не удалось получить ID бота: {e}")
+        await self._send_startup_sticker(bot)
+        await self._send_startup_sticker(application.bot)
+
+    async def _send_startup_sticker(self, bot):
+        """Send startup sticker to configured user"""
+        if self.startup_sticker_sent:
+            return
+        
+        try:
+            config = self.config_manager.get_config()
+            bot_config = config.get('bot', {})
+            authorized_users = bot_config.get('authorized_users', [])
+        except Exception as e:
+            logger.error(f"Не удалось получить конфигурацию для стартового стикера: {e}")
+            return
+        
+        target_user_id = None
+        if isinstance(authorized_users, list) and authorized_users:
+            target_user_id = authorized_users[0]
+        elif isinstance(authorized_users, int):
+            target_user_id = authorized_users
+        
+        if target_user_id is None:
+            logger.info("Стартовый стикер пропущен: не найден целевой пользователь в настройках.")
+            return
+        
+        try:
+            target_user_id = int(target_user_id)
+        except (TypeError, ValueError):
+            logger.warning(f"Стартовый стикер пропущен: некорректный user_id {target_user_id}")
+            return
+        
+        try:
+            sticker_id = random.choice(STARTUP_STICKERS)
+            await bot.send_sticker(chat_id=target_user_id, sticker=sticker_id)
+            await bot.send_message(
+                chat_id=target_user_id,
+                text="📱 Главное меню PCUltra",
+                reply_markup=self._get_main_menu()
+            )
+            self.startup_sticker_sent = True
+            logger.info(f"Стартовый стикер отправлен пользователю {target_user_id}")
+        except Exception as e:
+            logger.warning(f"Не удалось отправить стартовый стикер пользователю {target_user_id}: {e}")
+
     def _register_handlers(self):
         """Register command handlers"""
         
@@ -181,20 +275,43 @@ class BotAgent:
             fallbacks=[CommandHandler("done", self._cancel_input)],
         )
         
+        # Conversation handler for shutdown timer
+        shutdown_timer_handler = ConversationHandler(
+            entry_points=[CallbackQueryHandler(self._start_shutdown_timer, pattern="^power_shutdown_timer$")],
+            states={
+                WAITING_SHUTDOWN_TIMER: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self._handle_shutdown_timer_input),
+                    CallbackQueryHandler(self._cancel_shutdown_timer, pattern="^cancel_shutdown_timer$")
+                ],
+            },
+            fallbacks=[CommandHandler("done", self._cancel_input)],
+        )
+        
         # Basic commands
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("help", self.help_command))
         self.application.add_handler(CommandHandler("menu", self.menu_command))
         self.application.add_handler(CommandHandler("done", self._cancel_input))
+        self.application.add_handler(MessageHandler(filters.ALL, self._add_message_reaction, block=False))
         
         # Conversation handlers (must be added before callback handler)
         self.application.add_handler(text_conv_handler)
         self.application.add_handler(folder_conv_handler)
         self.application.add_handler(notify_conv_handler)
         self.application.add_handler(url_conv_handler)
+        self.application.add_handler(shutdown_timer_handler)
         
         # Callback query handler for inline buttons (must be last)
         self.application.add_handler(CallbackQueryHandler(self.button_callback))
+        self.application.add_error_handler(self._handle_error)
+    
+    async def _handle_error(self, update: object, context: ContextTypes.DEFAULT_TYPE):
+        """Global error handler for application"""
+        error = context.error
+        if isinstance(error, NetworkError) and "HTTPXRequest is not initialized" in str(error):
+            logger.debug("HTTPXRequest reset during shutdown — ignoring expected NetworkError")
+            return
+        logger.exception("Unhandled error in Telegram application", exc_info=error)
     
     def _get_main_menu(self):
         """Create main menu keyboard"""
@@ -288,7 +405,18 @@ class BotAgent:
         keyboard = [
             [InlineKeyboardButton("📁 Открыть папку", callback_data="system_open_folder")],
             [InlineKeyboardButton("🔔 Уведомление", callback_data="system_notify")],
+            [InlineKeyboardButton("⚡ Питание", callback_data="menu_power")],
             [InlineKeyboardButton("🔙 Назад", callback_data="menu_main")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    def _get_power_menu(self):
+        """Create power control submenu"""
+        keyboard = [
+            [InlineKeyboardButton("♿️ Выключение", callback_data="power_shutdown")],
+            [InlineKeyboardButton("⏳ Выключение (таймер)", callback_data="power_shutdown_timer")],
+            [InlineKeyboardButton("🔄 Перезагрузка", callback_data="power_reboot")],
+            [InlineKeyboardButton("🔙 Назад", callback_data="menu_system")]
         ]
         return InlineKeyboardMarkup(keyboard)
     
@@ -426,12 +554,42 @@ class BotAgent:
         if not await self._check_authorization(update):
             return
             
+        if update.message:
+            try:
+                await context.bot.set_message_reaction(
+                    chat_id=update.effective_chat.id,
+                    message_id=update.message.message_id,
+                    reaction=[ReactionTypeEmoji(emoji="🤡")],
+                    is_big=False,
+                )
+            except Exception as e:
+                logger.warning(f"Не удалось добавить реакцию 🤡 к сообщению /start: {e}")
+            
         text = (
-            "🤖 PCUltra Bot Active\n"
-            "Добро пожаловать! Используйте кнопки ниже для управления ПК.\n"
             "Используйте /menu для открытия главного меню."
         )
         await update.message.reply_text(text, reply_markup=self._get_main_menu())
+
+    async def _add_message_reaction(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Add clown reaction to any user message"""
+        message = update.message
+        if not message or not message.from_user:
+            return
+        
+        sender_id = message.from_user.id
+        # Skip bot messages (including our own)
+        if message.from_user.is_bot or (self.bot_id and sender_id == self.bot_id):
+            return
+        
+        try:
+            await context.bot.set_message_reaction(
+                chat_id=message.chat.id,
+                message_id=message.message_id,
+                reaction=[ReactionTypeEmoji(emoji="🤡")],
+                is_big=False,
+            )
+        except Exception as e:
+            logger.debug(f"Не удалось поставить реакцию 🤡: {e}")
 
     async def menu_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /menu command"""
@@ -447,8 +605,6 @@ class BotAgent:
             return
             
         help_text = (
-            "🤖 PCUltra Bot - Справка\n"
-            "Используйте /menu для открытия главного меню.\n"
             "Основные функции:\n"
             "🖱️ Управление мышью - движение, клики, прокрутка\n"
             "⌨️ Клавиатура - горячие клавиши и ввод текста\n"
@@ -595,6 +751,130 @@ class BotAgent:
             
         return ConversationHandler.END
 
+    async def _start_shutdown_timer(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Start shutdown timer conversation"""
+        query = update.callback_query
+        await query.answer()
+        
+        if not await self._check_authorization(update):
+            return ConversationHandler.END
+        if not await self._check_permission(update, "system"):
+            return ConversationHandler.END
+        
+        cancel_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Отменить", callback_data="cancel_shutdown_timer")]]
+        )
+        
+        prompt_message = None
+        try:
+            prompt_message = await query.edit_message_text(
+                "Через сколько выключить? (в минутах)",
+                reply_markup=cancel_markup
+            )
+        except Exception as e:
+            logger.warning(f"Failed to edit message for shutdown timer prompt: {e}")
+            prompt_message = await context.bot.send_message(
+                chat_id=query.message.chat.id,
+                text="Через сколько выключить? (в минутах)",
+                reply_markup=cancel_markup
+            )
+        
+        if prompt_message:
+            context.user_data['shutdown_prompt'] = {
+                "chat_id": prompt_message.chat.id,
+                "message_id": prompt_message.message_id
+            }
+        
+        return WAITING_SHUTDOWN_TIMER
+
+    async def _handle_shutdown_timer_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Handle shutdown timer input"""
+        text = update.message.text.strip()
+        cancel_markup = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("Отменить", callback_data="cancel_shutdown_timer")]]
+        )
+        prompt_info = context.user_data.get('shutdown_prompt')
+        
+        if not text.isdigit():
+            if prompt_info:
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=prompt_info["chat_id"],
+                        message_id=prompt_info["message_id"],
+                        text="Принимаются только цифры! Через сколько выключить?",
+                        reply_markup=cancel_markup
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to update shutdown prompt for invalid input: {e}")
+            else:
+                await update.message.reply_text(
+                    "Принимаются только цифры! Через сколько выключить?",
+                    reply_markup=cancel_markup
+                )
+            return WAITING_SHUTDOWN_TIMER
+        
+        minutes = int(text)
+        seconds = minutes * 60
+        
+        try:
+            os.system(f"shutdown /s /t {seconds}")
+            confirmation = (
+                f"✅ Выключение запланировано через {minutes} мин."
+                if minutes > 0 else
+                "✅ Выключение запланировано немедленно."
+            )
+            await update.message.reply_text(confirmation)
+            
+            if prompt_info:
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=prompt_info["chat_id"],
+                        message_id=prompt_info["message_id"],
+                        text="⚡ Питание",
+                        reply_markup=self._get_power_menu()
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to restore power menu after setting timer: {e}")
+            context.user_data.pop('shutdown_prompt', None)
+            
+        except Exception as e:
+            logger.error(f"Failed to set shutdown timer: {e}")
+            await update.message.reply_text(f"❌ Ошибка установки таймера выключения: {str(e)}")
+            if prompt_info:
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=prompt_info["chat_id"],
+                        message_id=prompt_info["message_id"],
+                        text="⚡ Питание",
+                        reply_markup=self._get_power_menu()
+                    )
+                except Exception as restore_error:
+                    logger.error(f"Failed to restore power menu after error: {restore_error}")
+            context.user_data.pop('shutdown_prompt', None)
+        
+        return ConversationHandler.END
+
+    async def _cancel_shutdown_timer(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Cancel shutdown timer conversation"""
+        query = update.callback_query
+        await query.answer("❌ Отменено")
+        
+        prompt_info = context.user_data.pop('shutdown_prompt', None)
+        try:
+            if prompt_info:
+                await context.bot.edit_message_text(
+                    chat_id=prompt_info["chat_id"],
+                    message_id=prompt_info["message_id"],
+                    text="⚡ Питание",
+                    reply_markup=self._get_power_menu()
+                )
+            else:
+                await query.edit_message_text("⚡ Питание", reply_markup=self._get_power_menu())
+        except Exception as e:
+            logger.error(f"Failed to restore power menu on cancel: {e}")
+        
+        return ConversationHandler.END
+
     async def _start_url_input(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start URL input conversation"""
         query = update.callback_query
@@ -670,6 +950,11 @@ class BotAgent:
             elif data == "menu_system":
                 if not await self._check_permission(update, "system"): return
                 await query.edit_message_text("💻 Система", reply_markup=self._get_system_menu())
+            elif data == "menu_power":
+                if not await self._check_permission(update, "system"): return
+                # Clear any previous shutdown timer prompt context
+                context.user_data.pop('shutdown_prompt', None)
+                await query.edit_message_text("⚡ Питание", reply_markup=self._get_power_menu())
             elif data == "menu_browser":
                 if not await self._check_permission(update, "browser"): return
                 await query.edit_message_text("🌐 Браузер", reply_markup=self._get_browser_menu())
@@ -683,6 +968,14 @@ class BotAgent:
             elif data == "browser_close":
                 if not await self._check_permission(update, "browser"): return
                 await self._handle_browser_action(data, query)
+            
+            # Power actions
+            elif data == "power_shutdown":
+                if not await self._check_permission(update, "system"): return
+                await self._handle_power_action("shutdown", query)
+            elif data == "power_reboot":
+                if not await self._check_permission(update, "system"): return
+                await self._handle_power_action("reboot", query)
 
             # Mouse actions
             elif data.startswith("mouse_"):
@@ -832,6 +1125,32 @@ class BotAgent:
         except Exception as e:
             logger.error(f"Status check error: {e}", exc_info=True)
             await query.answer(f"❌ Ошибка статуса: {str(e)}", show_alert=True)
+
+    async def _handle_power_action(self, action: str, query: Update.callback_query):
+        """Handle immediate power actions"""
+        try:
+            if action == "shutdown":
+                await query.answer("🛑 Выключение...")
+                os.system('shutdown /s /t 0')
+                await query.edit_message_text(
+                    "⚡ Питание\nКоманда выключения отправлена.",
+                    reply_markup=self._get_power_menu()
+                )
+            elif action == "reboot":
+                await query.answer("🔄 Перезагрузка...")
+                os.system('shutdown /r /t 0')
+                await query.edit_message_text(
+                    "⚡ Питание\nКоманда перезагрузки отправлена.",
+                    reply_markup=self._get_power_menu()
+                )
+            else:
+                await query.answer("Неизвестное действие питания.", show_alert=True)
+        except Exception as e:
+            logger.error(f"Power action error ({action}): {e}")
+            await query.edit_message_text(
+                f"❌ Ошибка выполнения команды питания: {str(e)}",
+                reply_markup=self._get_power_menu()
+            )
 
     async def _handle_screenshot_action(self, query: Update.callback_query, context: ContextTypes.DEFAULT_TYPE):
         """Handle full screenshot request"""
