@@ -10,6 +10,7 @@ import os
 import psutil
 import random
 from pathlib import Path
+from typing import Optional
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReactionTypeEmoji
 from telegram.ext import (
     Application, CommandHandler, CallbackQueryHandler, MessageHandler, 
@@ -21,6 +22,8 @@ import time
 from pc_controller import PCController, get_playwright_executor
 from config_manager import ConfigManager
 import shlex # Добавлен импорт для разбора аргументов
+from updater import UpdateManager, UpdateInfo
+from version import APP_VERSION, GITHUB_REPOSITORY, RELEASES_URL
 
 # --- КОНФИГУРАЦИЯ ЛОГГИРОВАНИЯ ---
 # Настраиваем логирование здесь, в главном файле
@@ -65,6 +68,9 @@ class BotAgent:
         self.mouse_step = 50  # Pixels to move mouse per button press
         self.startup_sticker_sent = False
         self.bot_id = None
+        self.update_manager = UpdateManager(GITHUB_REPOSITORY, APP_VERSION)
+        self.available_update: Optional[UpdateInfo] = None
+        self.notified_update_version: Optional[str] = None
     
     def is_running(self):
         """Check if bot is running"""
@@ -157,6 +163,11 @@ class BotAgent:
             application.job_queue.run_once(self._startup_job, when=0)
         except Exception as e:
             logger.error(f"Не удалось запланировать стартовую задачу: {e}")
+        
+        try:
+            await self._setup_update_checks(application)
+        except Exception as e:
+            logger.error(f"Не удалось настроить проверку обновлений: {e}")
     
     async def _graceful_shutdown(self):
         """Остановить application аккуратно внутри его же цикла"""
@@ -180,6 +191,169 @@ class BotAgent:
             logger.warning(f"Не удалось получить ID бота: {e}")
         await self._send_startup_sticker(bot)
         await self._send_startup_sticker(application.bot)
+
+    async def _setup_update_checks(self, application: Application):
+        """Настраивает задачи проверки обновлений."""
+        config = self.config_manager.get_config()
+        updates_cfg = config.get('updates') or {}
+        enabled = updates_cfg.get('enabled', True)
+        if not enabled:
+            logger.info("Автоматическая проверка обновлений отключена в конфигурации.")
+            return
+        
+        interval_minutes = updates_cfg.get('check_interval_minutes', 2)
+        try:
+            interval_minutes = int(interval_minutes)
+        except (TypeError, ValueError):
+            interval_minutes = 2
+        interval_minutes = max(5, interval_minutes)
+        
+        application.job_queue.run_once(self._update_check_job, when=10)
+        application.job_queue.run_repeating(
+            self._update_check_job,
+            interval=interval_minutes * 60,
+            first=interval_minutes * 60
+        )
+        logger.info("Проверка обновлений включена, интервал: %s минут.", interval_minutes)
+    
+    async def _update_check_job(self, context: ContextTypes.DEFAULT_TYPE):
+        """Задача по проверке наличия обновлений."""
+        if not self.update_manager:
+            return
+        
+        loop = asyncio.get_running_loop()
+        try:
+            update_info = await loop.run_in_executor(None, self.update_manager.check_for_updates)
+        except Exception as e:
+            logger.debug(f"Ошибка проверки обновления: {e}")
+            return
+        
+        if not update_info:
+            return
+        
+        if update_info.version == self.notified_update_version:
+            return
+        
+        self.available_update = update_info
+        self.notified_update_version = update_info.version
+        
+        try:
+            await self._notify_update_available(context.bot, update_info)
+        except Exception as e:
+            logger.error(f"Не удалось уведомить о новом обновлении: {e}")
+    
+    async def _notify_update_available(self, bot, update_info: UpdateInfo):
+        """Отправляет сообщение о доступном обновлении всем авторизованным пользователям."""
+        user_ids = self._get_authorized_user_ids()
+        if not user_ids:
+            logger.info("Нет авторизованных пользователей для уведомления об обновлении.")
+            return
+        
+        notes_part = ""
+        if update_info.notes_preview:
+            notes_part = f"\n\nЧто нового:\n{update_info.notes_preview}"
+        
+        text = (
+            f"🚀 Доступна новая версия PCUltra {update_info.version}.\n"
+            f"Текущая версия: {APP_VERSION}.{notes_part}\n\n"
+            "Нажмите «Обновить», чтобы скачать и перезапустить приложение."
+        )
+        
+        release_url = update_info.release_url or RELEASES_URL
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton(f"⬆️ Обновить до {update_info.version}", callback_data="update_install")],
+            [InlineKeyboardButton("ℹ️ Открыть релиз", url=release_url)]
+        ])
+        
+        for user_id in user_ids:
+            try:
+                await bot.send_message(chat_id=user_id, text=text, reply_markup=keyboard)
+            except Exception as e:
+                logger.warning(f"Не удалось отправить уведомление пользователю {user_id}: {e}")
+    
+    def _get_authorized_user_ids(self):
+        """Возвращает список ID пользователей, которым нужно отправлять уведомления об обновлениях."""
+        try:
+            config = self.config_manager.get_config()
+            bot_cfg = config.get('bot', {})
+            authorized_users = bot_cfg.get('authorized_users', [])
+        except Exception as e:
+            logger.error(f"Не удалось получить список авторизованных пользователей: {e}")
+            return []
+        
+        result = []
+        if isinstance(authorized_users, int):
+            result.append(int(authorized_users))
+        elif isinstance(authorized_users, list):
+            for value in authorized_users:
+                try:
+                    result.append(int(value))
+                except (TypeError, ValueError):
+                    logger.warning(f"Пропускаю некорректный user_id в настройках: {value}")
+        return result
+
+    async def _handle_update_install(self, query, context: ContextTypes.DEFAULT_TYPE):
+        """Обрабатывает установку обновления по запросу пользователя."""
+        if not self.available_update:
+            await query.edit_message_text("ℹ️ Актуальных обновлений не найдено.", reply_markup=self._get_main_menu())
+            return
+        
+        update_info = self.available_update
+        
+        if not self.update_manager.can_self_update():
+            manual_text = (
+                "⚠️ Автообновление доступно только в собранной .exe версии.\n"
+                f"Скачайте обновление вручную: {update_info.release_url or RELEASES_URL}"
+            )
+            await query.edit_message_text(manual_text, reply_markup=self._get_main_menu())
+            return
+        
+        loop = asyncio.get_running_loop()
+        await query.edit_message_text("⬇️ Скачиваю обновление...", reply_markup=None)
+        
+        try:
+            download_path = await loop.run_in_executor(
+                None,
+                self.update_manager.download_update,
+                update_info
+            )
+        except Exception as e:
+            logger.error(f"Ошибка скачивания обновления: {e}")
+            await query.edit_message_text(
+                f"❌ Не удалось скачать обновление: {str(e)}",
+                reply_markup=self._get_main_menu()
+            )
+            return
+        
+        await query.edit_message_text(
+            f"✅ Обновление {update_info.version} скачано.\n🚀 Запускаю новую версию...",
+            reply_markup=None
+        )
+        
+        try:
+            await loop.run_in_executor(None, self.update_manager.launch_executable, download_path)
+        except Exception as e:
+            logger.error(f"Не удалось запустить новую версию: {e}")
+            await query.edit_message_text(
+                f"❌ Не удалось запустить новую версию: {str(e)}",
+                reply_markup=self._get_main_menu()
+            )
+            return
+        
+        self.available_update = None
+        await asyncio.sleep(1)
+        await self._shutdown_for_update()
+
+    async def _shutdown_for_update(self):
+        """Завершает работу текущего экземпляра перед запуском обновления."""
+        logger.info("Завершение текущего экземпляра для применения обновления.")
+        self.running = False
+        try:
+            await self._graceful_shutdown()
+        except Exception as e:
+            logger.error(f"Ошибка при завершении перед обновлением: {e}")
+        finally:
+            os._exit(0)
 
     async def _send_startup_sticker(self, bot):
         """Send startup sticker to configured user"""
@@ -1006,6 +1180,10 @@ class BotAgent:
             elif data.startswith("shortcut_"):
                 if not await self._check_permission(update, "shortcut"): return
                 await self._handle_shortcut_action(data, query)
+            
+            elif data == "update_install":
+                if not await self._check_permission(update, "system"): return
+                await self._handle_update_install(query, context)
                 
             elif data == "noop":
                 await query.answer("Действие недоступно.")

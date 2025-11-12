@@ -18,3 +18,6 @@ web:
   host: 127.0.0.1
   port: 5000
   secret_key: 446e3342f4a5cc4cbec85f42c9c736d99a002ee25f2cc0b45665c14d93065867
+updates:
+  enabled: true
+  check_interval_minutes: 5

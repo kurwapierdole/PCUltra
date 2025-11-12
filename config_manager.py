@@ -38,6 +38,20 @@ class ConfigManager:
             self.config['shortcuts'] = {}
         if 'permissions' not in self.config:
             self.config['permissions'] = {}
+        if 'updates' not in self.config or not isinstance(self.config['updates'], dict):
+            self.config['updates'] = {}
+        
+        updates_section = self.config['updates']
+        updates_modified = False
+        if 'enabled' not in updates_section:
+            updates_section['enabled'] = True
+            updates_modified = True
+        if 'check_interval_minutes' not in updates_section:
+            updates_section['check_interval_minutes'] = 2
+            updates_modified = True
+        
+        if updates_modified:
+            self.save_config()
         
         # Generate secret key if not set
         if not self.config['web'].get('secret_key'):
@@ -75,7 +89,11 @@ class ConfigManager:
                     'args': []
                 }
             },
-            'permissions': {}
+            'permissions': {},
+            'updates': {
+                'enabled': True,
+                'check_interval_minutes': 2
+            }
         }
         
         with open(self.config_path, 'w', encoding='utf-8') as f:
