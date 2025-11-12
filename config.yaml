@@ -1,0 +1,21 @@
+bot:
+  authorized_users: []
+  auto_start: false
+  command_timeout: 30
+  token: ''
+permissions: {}
+shortcuts:
+  vpn:
+    action: launch_app
+    args: []
+    command: /vpn
+    path: C:\Program Files\AmneziaVPN\client.exe
+updates:
+  check_interval_minutes: 2
+  enabled: true
+web:
+  admin_password_hash: ''
+  admin_username: ''
+  host: 127.0.0.1
+  port: 5000
+  secret_key: 5077353b35c6d164bb64ed78565f1906cbd6db5d4c8e7c0104c3540e5651198a
