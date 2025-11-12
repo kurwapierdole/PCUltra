@@ -46,16 +46,20 @@ class UpdateManager:
         current_version: str,
         *,
         session: Optional[requests.Session] = None,
+        github_token: Optional[str] = None,
     ):
         self.repository = repository
         self.current_version = current_version
         self._session = session or requests.Session()
-        self._session.headers.update(
-            {
-                "User-Agent": f"PCUltra/{current_version}",
-                "Accept": "application/vnd.github+json",
-            }
-        )
+        headers = {
+            "User-Agent": f"PCUltra/{current_version}",
+            "Accept": "application/vnd.github+json",
+        }
+        # Добавляем токен авторизации, если он предоставлен
+        # Для classic personal access tokens используется формат "token"
+        if github_token:
+            headers["Authorization"] = f"token {github_token}"
+        self._session.headers.update(headers)
         self._lock = threading.Lock()
         self._last_available: Optional[UpdateInfo] = None
 

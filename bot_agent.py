@@ -68,7 +68,11 @@ class BotAgent:
         self.mouse_step = 50  # Pixels to move mouse per button press
         self.startup_sticker_sent = False
         self.bot_id = None
-        self.update_manager = UpdateManager(GITHUB_REPOSITORY, APP_VERSION)
+        # Получаем GitHub токен из конфигурации
+        config = config_manager.get_config()
+        updates_cfg = config.get('updates', {})
+        github_token = updates_cfg.get('github_token', '')
+        self.update_manager = UpdateManager(GITHUB_REPOSITORY, APP_VERSION, github_token=github_token if github_token else None)
         self.available_update: Optional[UpdateInfo] = None
         self.notified_update_version: Optional[str] = None
     
@@ -159,10 +163,20 @@ class BotAgent:
     
     async def _post_init_callback(self, application: Application):
         """Callback executed after application initialization"""
-        try:
-            application.job_queue.run_once(self._startup_job, when=0)
-        except Exception as e:
-            logger.error(f"Не удалось запланировать стартовую задачу: {e}")
+        job_queue = getattr(application, "job_queue", None)
+
+        if job_queue:
+            try:
+                job_queue.run_once(self._startup_job, when=0)
+            except Exception as e:
+                logger.error(f"Не удалось запланировать стартовую задачу: {e}")
+                await self._run_startup_tasks(application)
+        else:
+            logger.warning(
+                "JobQueue недоступен. Установите пакет 'python-telegram-bot[job-queue]' "
+                "для планирования фоновых задач. Выполняю запусковые действия немедленно."
+            )
+            await self._run_startup_tasks(application)
         
         try:
             await self._setup_update_checks(application)
@@ -183,17 +197,29 @@ class BotAgent:
 
     async def _startup_job(self, context: ContextTypes.DEFAULT_TYPE):
         """Job queue task executed right after application start"""
-        bot = context.bot
+        application = context.application
+        await self._run_startup_tasks(application)
+
+    async def _run_startup_tasks(self, application: Application):
+        """Действия, которые должны выполниться при запуске бота"""
+        bot = application.bot
         try:
             me = await bot.get_me()
             self.bot_id = me.id
         except Exception as e:
             logger.warning(f"Не удалось получить ID бота: {e}")
         await self._send_startup_sticker(bot)
-        await self._send_startup_sticker(application.bot)
 
     async def _setup_update_checks(self, application: Application):
         """Настраивает задачи проверки обновлений."""
+        job_queue = getattr(application, "job_queue", None)
+        if not job_queue:
+            logger.warning(
+                "JobQueue недоступен — автоматическая проверка обновлений отключена. "
+                "Установите пакет 'python-telegram-bot[job-queue]' для включения этой функции."
+            )
+            return
+
         config = self.config_manager.get_config()
         updates_cfg = config.get('updates') or {}
         enabled = updates_cfg.get('enabled', True)
@@ -208,8 +234,8 @@ class BotAgent:
             interval_minutes = 2
         interval_minutes = max(5, interval_minutes)
         
-        application.job_queue.run_once(self._update_check_job, when=10)
-        application.job_queue.run_repeating(
+        job_queue.run_once(self._update_check_job, when=10)
+        job_queue.run_repeating(
             self._update_check_job,
             interval=interval_minutes * 60,
             first=interval_minutes * 60
@@ -410,6 +436,7 @@ class BotAgent:
                 ],
             },
             fallbacks=[CommandHandler("done", self._cancel_input)],
+            per_message=True,
         )
         
         # Conversation handler for folder navigation
@@ -423,6 +450,7 @@ class BotAgent:
                 ],
             },
             fallbacks=[CommandHandler("done", self._cancel_input)],
+            per_message=True,
         )
         
         # Conversation handler for notification
@@ -435,6 +463,7 @@ class BotAgent:
                 ],
             },
             fallbacks=[CommandHandler("done", self._cancel_input)],
+            per_message=True,
         )
         
         # Conversation handler for browser URL
@@ -447,6 +476,7 @@ class BotAgent:
                 ],
             },
             fallbacks=[CommandHandler("done", self._cancel_input)],
+            per_message=True,
         )
         
         # Conversation handler for shutdown timer
@@ -459,6 +489,7 @@ class BotAgent:
                 ],
             },
             fallbacks=[CommandHandler("done", self._cancel_input)],
+            per_message=True,
         )
         
         # Basic commands

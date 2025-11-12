@@ -200,18 +200,74 @@ def create_app(config_manager: ConfigManager, system_tray_app=None):
         data = request.get_json()
         
         try:
-            # Handle password update
-            if 'web' in data and 'admin_password' in data['web']:
-                password = data['web']['admin_password']
+            if not isinstance(data, dict):
+                raise ValueError('Некорректный формат данных конфигурации')
+
+            normalized_updates = {}
+
+            # Support nested 'bot' payloads from API clients
+            bot_payload = {}
+            incoming_bot = data.pop('bot', None)
+            if isinstance(incoming_bot, dict):
+                bot_payload.update(incoming_bot)
+
+            # Flattened bot fields from dashboard form
+            if 'bot_token' in data:
+                bot_payload['token'] = (data.pop('bot_token') or '').strip()
+
+            if 'command_timeout' in data:
+                command_timeout = data.pop('command_timeout')
+                if command_timeout not in (None, ''):
+                    try:
+                        bot_payload['command_timeout'] = int(command_timeout)
+                    except (TypeError, ValueError):
+                        raise ValueError('Таймаут команды должен быть числом')
+
+            if 'auto_start' in data:
+                auto_start = data.pop('auto_start')
+                bot_payload['auto_start'] = bool(auto_start)
+
+            if bot_payload:
+                normalized_updates['bot'] = bot_payload
+
+            # Support nested 'web' payloads from API clients
+            web_payload = {}
+            incoming_web = data.pop('web', None)
+            if isinstance(incoming_web, dict):
+                web_payload.update(incoming_web)
+
+            # Flattened web fields from dashboard form
+            if 'admin_username' in data:
+                web_payload['admin_username'] = (data.pop('admin_username') or '').strip()
+
+            if 'admin_password' in data:
+                password = data.pop('admin_password')
                 if password:
-                    password_hash = bcrypt.hashpw(
+                    web_payload['admin_password_hash'] = bcrypt.hashpw(
                         password.encode('utf-8'),
                         bcrypt.gensalt()
                     ).decode('utf-8')
-                    data['web']['admin_password_hash'] = password_hash
-                del data['web']['admin_password']
-            
-            config_manager.update_config(data)
+
+            # Handle password update if provided inside nested payload
+            if 'admin_password' in web_payload:
+                password = web_payload.pop('admin_password')
+                if password:
+                    web_payload['admin_password_hash'] = bcrypt.hashpw(
+                        password.encode('utf-8'),
+                        bcrypt.gensalt()
+                    ).decode('utf-8')
+
+            if web_payload:
+                normalized_updates['web'] = web_payload
+
+            # Merge any remaining keys (already structured dicts)
+            for key, value in data.items():
+                normalized_updates[key] = value
+
+            if not normalized_updates:
+                return jsonify({'success': False, 'error': 'Нет данных для обновления'}), 400
+
+            config_manager.update_config(normalized_updates)
             
             # Auto-restart bot if running and bot config changed
             if system_tray_app and system_tray_app.bot_agent and system_tray_app.bot_agent.is_running():

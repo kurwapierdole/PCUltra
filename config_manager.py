@@ -49,6 +49,9 @@ class ConfigManager:
         if 'check_interval_minutes' not in updates_section:
             updates_section['check_interval_minutes'] = 2
             updates_modified = True
+        if 'github_token' not in updates_section:
+            updates_section['github_token'] = ''
+            updates_modified = True
         
         if updates_modified:
             self.save_config()
@@ -92,7 +95,8 @@ class ConfigManager:
             'permissions': {},
             'updates': {
                 'enabled': True,
-                'check_interval_minutes': 2
+                'check_interval_minutes': 2,
+                'github_token': ''
             }
         }
         
